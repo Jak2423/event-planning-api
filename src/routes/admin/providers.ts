@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { supabase } from "../../lib/supabase.js"
-import { authenticate, requireAdmin } from "../../middleware/auth.js"
+import { authenticate, mapSupabaseUserToAuthUser, requireAdmin } from "../../middleware/auth.js"
 
 export const adminProvidersRouter = new Hono()
 
@@ -15,7 +15,7 @@ adminProvidersRouter.get("/", async (c) => {
 
   if (error) return c.json({ error: error.message }, 500)
 
-  const providers = users.filter(u => u.app_metadata?.role === "provider")
+  const providers = users.filter((u) => mapSupabaseUserToAuthUser(u).role === "provider")
 
   // Fetch venue counts per provider
   const providerIds = providers.map(p => p.id)
