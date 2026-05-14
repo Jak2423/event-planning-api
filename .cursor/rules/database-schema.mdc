@@ -32,29 +32,14 @@ Recurring weekly pricing per venue (day-of-week granularity — **not hourly**).
 - `created_at`
 - Unique constraint: `(venue_id, day_of_week)`
 
-## `venue_bookings`
-- `id` uuid, `venue_id` → `venues`, `user_id` → `auth.users` (nullable)
-- `booking_date` date (day-level — no start_time/end_time for day bookings)
-- `guest_count` integer, `total_price` integer
-- `status`: `pending` | `confirmed` | `cancelled` (default `confirmed`)
-- `created_at`, `updated_at`
+## `orders`
+Checkout orders created by authenticated customers (`POST /orders/make-order`). Columns used by this API include `user_id`, customer contact fields, `items` (jsonb line items), `subtotal`, `total`, `status`, timestamps.
 
 ## Query patterns
 
 ```typescript
-// Always join categories via embed syntax
 supabase.from("venues").select("*, categories(slug, name)")
 
-// Availability check for a date range
-supabase
-  .from("venue_bookings")
-  .select("id, booking_date")
-  .eq("venue_id", venueId)
-  .gte("booking_date", start)
-  .lte("booking_date", end)
-  .eq("status", "confirmed")
-
-// Upsert time slot (onConflict required)
 supabase
   .from("venue_time_slots")
   .upsert({ venue_id, day_of_week, ...pricing }, { onConflict: "venue_id,day_of_week" })

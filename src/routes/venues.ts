@@ -22,7 +22,6 @@ const SORT_MAP: Record<string, { column: string; ascending: boolean }> = {
 const listQuerySchema = z.object({
   category: z.string().optional(),
   categoryId: z.string().uuid().optional(),
-  /** When set, Bearer token must belong to this provider (or admin). */
   provider_id: z.string().uuid().optional(),
   district: z.string().optional(),
   capacity: z.coerce.number().optional(),
@@ -105,7 +104,6 @@ const generateUniqueVenueSlug = async (name: string): Promise<string> => {
   return `${base}-${randomUUID().replace(/-/g, "").slice(0, 12)}`
 }
 
-// GET /venues — public listing; with `provider_id` + Bearer requires owner (or admin)
 venuesRouter.get("/", zValidator("query", listQuerySchema), async (c) => {
   const {
     category,
@@ -172,7 +170,6 @@ venuesRouter.get("/", zValidator("query", listQuerySchema), async (c) => {
   })
 })
 
-// POST /venues — providers only: validated body + server-side slug
 venuesRouter.post("/", authenticate, requireProvider, zValidator("json", createVenueBodySchema), async (c) => {
   const user = c.var.user
   const body = c.req.valid("json")
@@ -214,7 +211,6 @@ venuesRouter.post("/", authenticate, requireProvider, zValidator("json", createV
   return c.json({ data }, 201)
 })
 
-// GET /venues/:slug — public single venue
 venuesRouter.get("/:slug", async (c) => {
   const slug = c.req.param("slug")
 
@@ -230,7 +226,6 @@ venuesRouter.get("/:slug", async (c) => {
   return c.json({ data })
 })
 
-// GET /venues/:id/availability — time slots + bookings for a month
 venuesRouter.get("/:id/availability", async (c) => {
   const venueId = c.req.param("id")
   const month = c.req.query("month")
@@ -248,25 +243,18 @@ venuesRouter.get("/:id/availability", async (c) => {
     endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split("T")[0]
   }
 
-  const [{ data: slots, error: slotsErr }, { data: bookings, error: bookingsErr }] = await Promise.all([
-    supabase.from("venue_time_slots").select("*").eq("venue_id", venueId),
-    supabase
-      .from("venue_bookings")
-      .select("id, booking_date, status")
-      .eq("venue_id", venueId)
-      .gte("booking_date", startDate)
-      .lte("booking_date", endDate)
-      .eq("status", "confirmed"),
-  ])
+  const { data: slots, error: slotsErr } = await supabase
+    .from("venue_time_slots")
+    .select("*")
+    .eq("venue_id", venueId)
 
-  if (slotsErr || bookingsErr) {
-    return c.json({ error: slotsErr?.message ?? bookingsErr?.message }, 500)
+  if (slotsErr) {
+    return c.json({ error: slotsErr.message }, 500)
   }
 
-  return c.json({ data: { slots, bookings, startDate, endDate } })
+  return c.json({ data: { slots, startDate, endDate } })
 })
 
-// PATCH /venues/:id — provider updates only their rows (admin: any)
 venuesRouter.patch("/:id", authenticate, requireProvider, zValidator("json", patchVenueBodySchema), async (c) => {
   const venueId = c.req.param("id")
   const user = c.var.user

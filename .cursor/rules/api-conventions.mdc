@@ -11,10 +11,12 @@ alwaysApply: false
 All routes return JSON with a consistent envelope:
 
 ```typescript
-// Success
 { data: T, meta?: { total, page, limit, totalPages } }
+```
 
-// Error
+Errors:
+
+```typescript
 { error: string }
 ```
 
@@ -31,16 +33,16 @@ import { authenticate, requireAdmin } from "../middleware/auth.js"
 
 export const myRouter = new Hono()
 
-// Public route
 myRouter.get("/", async (c) => { ... })
 
-// Protected route — always apply middleware on the route, not globally
 myRouter.post("/", authenticate, requireProvider, zValidator("json", schema), async (c) => {
-  const user = c.var.user   // typed as AuthUser
+  const user = c.var.user
   const body = c.req.valid("json")
   ...
 })
 ```
+
+Protected routes: apply middleware on each route (or route group), not globally unless intentional.
 
 ## Auth middleware usage
 
@@ -48,13 +50,7 @@ myRouter.post("/", authenticate, requireProvider, zValidator("json", schema), as
 - `requireAdmin` — must come after `authenticate`, throws 403 if role !== "admin"
 - `requireProvider` — must come after `authenticate`, throws 403 if role is not "provider" or "admin"
 
-```typescript
-// ✅ correct order
-myRouter.post("/", authenticate, requireAdmin, async (c) => { ... })
-
-// ❌ wrong — requireAdmin before authenticate
-myRouter.post("/", requireAdmin, authenticate, async (c) => { ... })
-```
+Order matters: `authenticate` before `requireAdmin` / `requireProvider`.
 
 ## Supabase client choice
 
@@ -79,9 +75,5 @@ Use `return c.json({ error: ... }, status)` for inline errors from Supabase call
 Always use `.js` extension on local imports (required for ESM Node):
 
 ```typescript
-// ✅
 import { supabase } from "../lib/supabase.js"
-
-// ❌
-import { supabase } from "../lib/supabase"
 ```

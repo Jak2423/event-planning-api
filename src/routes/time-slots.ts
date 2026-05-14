@@ -13,7 +13,6 @@ const upsertSlotSchema = z.object({
   is_on_sale: z.boolean().default(false),
 })
 
-// GET /time-slots/:venueId — public, returns weekly pricing config
 timeSlotsRouter.get("/:venueId", async (c) => {
   const venueId = c.req.param("venueId")
 
@@ -28,7 +27,6 @@ timeSlotsRouter.get("/:venueId", async (c) => {
   return c.json({ data })
 })
 
-// PUT /time-slots/:venueId/:day — provider upserts pricing for a day of week
 timeSlotsRouter.put(
   "/:venueId/:day",
   authenticate,
@@ -40,7 +38,6 @@ timeSlotsRouter.put(
     const user = c.var.user
     const body = c.req.valid("json")
 
-    // Verify the provider owns the venue
     if (user.role !== "admin") {
       const { data: venue } = await supabase
         .from("venues")
@@ -54,10 +51,7 @@ timeSlotsRouter.put(
 
     const { data, error } = await supabase
       .from("venue_time_slots")
-      .upsert(
-        { venue_id: venueId, ...body, day_of_week: day },
-        { onConflict: "venue_id,day_of_week" }
-      )
+      .upsert({ venue_id: venueId, ...body, day_of_week: day }, { onConflict: "venue_id,day_of_week" })
       .select()
       .single()
 
@@ -67,7 +61,6 @@ timeSlotsRouter.put(
   }
 )
 
-// DELETE /time-slots/:venueId/:day — remove pricing override for a day
 timeSlotsRouter.delete("/:venueId/:day", authenticate, requireProvider, async (c) => {
   const venueId = c.req.param("venueId")
   const day = parseInt(c.req.param("day"), 10)

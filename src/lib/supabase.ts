@@ -7,12 +7,10 @@ if (!supabaseUrl || !supabaseServiceKey) {
 	throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY env vars');
 }
 
-// Service-role client — bypasses RLS, use only server-side
 export const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 	auth: { persistSession: false },
 });
 
-// Create a scoped client that acts as the authenticated user (respects RLS)
 export const supabaseAs = (accessToken: string) =>
 	createClient(supabaseUrl, supabaseServiceKey, {
 		auth: { persistSession: false },

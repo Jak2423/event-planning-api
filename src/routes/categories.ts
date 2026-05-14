@@ -3,7 +3,6 @@ import { supabase } from "../lib/supabase.js"
 
 export const categoriesRouter = new Hono()
 
-// GET /categories — public, ordered by sort_order
 categoriesRouter.get("/", async (c) => {
   const { data, error } = await supabase
     .from("categories")
@@ -15,7 +14,6 @@ categoriesRouter.get("/", async (c) => {
   return c.json({ data })
 })
 
-// GET /categories/:slug — resolve a single category by slug
 categoriesRouter.get("/:slug", async (c) => {
   const slug = c.req.param("slug")
 

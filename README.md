@@ -25,11 +25,12 @@ event-planning-api/    → This project — single API consumed by both frontend
 
 ```bash
 cp .env.example .env
-# Fill in SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY
 
 npm install
 npm run dev        # http://localhost:4000
 ```
+
+Fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env`.
 
 ## Environment variables
 
@@ -49,17 +50,16 @@ npm run dev        # http://localhost:4000
 | GET | `/health` | Health check |
 | GET | `/venues` | List venues (filters: category, district, capacity, search, featured, page, limit) |
 | GET | `/venues/:slug` | Single venue by slug |
-| GET | `/venues/:id/availability?month=2026-05` | Time slots + confirmed bookings for a month |
+| GET | `/venues/:id/availability?month=2026-05` | Weekly time slots for a venue (month bounds for `startDate`/`endDate`) |
 | GET | `/time-slots/:venueId` | Weekly pricing config for a venue |
 
 ### Authenticated (Bearer token required)
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/bookings` | Current user's bookings |
-| GET | `/bookings/:id` | Single booking (owner or admin) |
-| POST | `/bookings` | Create a booking (checks for date conflicts) |
-| PATCH | `/bookings/:id/status` | Update status (customer: cancel only; provider/admin: any) |
+| POST | `/orders/make-order` | Create checkout order |
+| GET | `/orders` | Current user’s orders (paginated) |
+| GET | `/orders/:id` | Single order (owner or admin) |
 | POST | `/venues` | Create a venue (provider+) |
 | PATCH | `/venues/:id` | Update own venue (admin can update any) |
 | PUT | `/time-slots/:venueId/:day` | Upsert day-of-week pricing (provider+) |
@@ -69,11 +69,11 @@ npm run dev        # http://localhost:4000
 
 | Method | Path | Description |
 |---|---|---|
-| GET | `/admin/orders` | All bookings with filters (status, venue, date range, pagination) |
-| GET | `/admin/orders/stats` | Booking counts + total revenue |
-| PATCH | `/admin/orders/:id` | Update any booking status |
+| GET | `/admin/orders` | All orders with filters (status, `created_at` range, pagination) |
+| GET | `/admin/orders/stats` | Order counts + confirmed revenue (`total`) |
+| PATCH | `/admin/orders/:id` | Update order status |
 | GET | `/admin/providers` | All providers with venue counts |
-| GET | `/admin/providers/:id` | Provider detail with venues + recent bookings |
+| GET | `/admin/providers/:id` | Provider detail with venues + recent orders for those venues |
 | PATCH | `/admin/providers/:id/verify` | Approve or revoke provider |
 | PATCH | `/admin/providers/:id/role` | Change user role |
 
@@ -113,13 +113,13 @@ Authenticated:
 ```typescript
 const { data: { session } } = await supabase.auth.getSession()
 
-const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/bookings`, {
+const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/orders/make-order`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${session?.access_token}`,
   },
-  body: JSON.stringify({ venue_id, booking_date, guest_count, total_price }),
+  body: JSON.stringify(payload),
 })
 ```
 
@@ -135,7 +135,8 @@ src/
     auth.ts                 ← authenticate · requireAdmin · requireProvider
   routes/
     venues.ts
-    bookings.ts
+    orders.ts
+    categories.ts
     time-slots.ts
     admin/
       orders.ts

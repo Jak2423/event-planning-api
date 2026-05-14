@@ -4,7 +4,6 @@ import { HTTPException } from "hono/http-exception"
 import { supabase } from "../lib/supabase.js"
 import type { AuthUser } from "../types/index.js"
 
-/** Map Supabase Auth user → API role (aligns with Nairly web: `user_metadata.user_type`, `role`, `app_metadata.role`). */
 export const mapSupabaseUserToAuthUser = (user: User): AuthUser => {
   const appRole = user.app_metadata?.role as string | undefined
   const meta = (user.user_metadata ?? {}) as Record<string, unknown>
@@ -30,7 +29,6 @@ export const loadAuthUserFromToken = async (accessToken: string): Promise<AuthUs
   return mapSupabaseUserToAuthUser(data.user)
 }
 
-// Verifies the Bearer token from Authorization header and sets c.var.user
 export const authenticate = createMiddleware(async (c, next) => {
   const authHeader = c.req.header("Authorization")
 
@@ -49,7 +47,6 @@ export const authenticate = createMiddleware(async (c, next) => {
   await next()
 })
 
-// Must be used after authenticate — rejects non-admin users
 export const requireAdmin = createMiddleware(async (c, next) => {
   const user = c.var.user
 
@@ -60,7 +57,6 @@ export const requireAdmin = createMiddleware(async (c, next) => {
   await next()
 })
 
-/** True if caller may create/manage venues (JWT role, metadata, or authoritative `profiles.user_type`). */
 export const userIsEligibleProvider = async (user: AuthUser): Promise<boolean> => {
   if (user.role === "admin" || user.role === "provider") return true
   if (user.userType === "provider") return true
@@ -83,13 +79,11 @@ export const assertProviderAccess = async (user: AuthUser): Promise<void> => {
   }
 }
 
-// Must be used after authenticate
 export const requireProvider = createMiddleware(async (c, next) => {
   await assertProviderAccess(c.var.user)
   await next()
 })
 
-/** Require Bearer token and permission to scope venue list by this provider UUID. */
 export const assertScopedProviderVenueAccess = async (
   authHeader: string | undefined,
   providerId: string
