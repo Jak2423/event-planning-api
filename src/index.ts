@@ -13,6 +13,7 @@ import { providerRouter } from './routes/provider.js';
 import { timeSlotsRouter } from './routes/time-slots.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { venuesRouter } from './routes/venues.js';
+import { wishlistRouter } from './routes/wishlist.js';
 
 const app = new Hono();
 
@@ -38,6 +39,7 @@ app.route('/uploads', uploadsRouter);
 app.route('/time-slots', timeSlotsRouter);
 app.route('/categories', categoriesRouter);
 app.route('/orders', ordersRouter);
+app.route('/wishlist', wishlistRouter);
 app.route('/provider', providerRouter);
 app.route('/admin/orders', adminOrdersRouter);
 app.route('/admin/providers', adminProvidersRouter);

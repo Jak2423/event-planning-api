@@ -13,6 +13,7 @@ import {
 	providerShareFromOrder,
 	type OrderRow,
 } from "../lib/provider-orders.js"
+import { syncVenueBookingsForOrder } from "../lib/venue-bookings.js"
 import { authenticate, requireProvider } from "../middleware/auth.js"
 
 export const providerRouter = new Hono()
@@ -191,6 +192,7 @@ providerRouter.patch(
 		}
 
 		const out = updated as OrderRow
+		await syncVenueBookingsForOrder(out.id, out.items, out.status)
 		return c.json({
 			data: {
 				...out,

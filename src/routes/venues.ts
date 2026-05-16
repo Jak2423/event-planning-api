@@ -36,6 +36,8 @@ const listQuerySchema = z.object({
 
 const emptyToUndef = (v: unknown) => (v === "" || v === null ? undefined : v)
 
+const coordPreprocess = (v: unknown) => emptyToUndef(v)
+
 const venueWritableBodySchema = z.object({
   name: z.string().trim().min(2, "Нэр хэт богино байна"),
   short_description: z.preprocess(emptyToUndef, z.string().trim().max(500).optional()),
@@ -44,8 +46,8 @@ const venueWritableBodySchema = z.object({
   location: z.string().trim().min(2, "Байршил оруулна уу"),
   district: z.preprocess(emptyToUndef, z.string().trim().max(200).optional()),
   address: z.preprocess(emptyToUndef, z.string().trim().optional()),
-  latitude: z.coerce.number().optional(),
-  longitude: z.coerce.number().optional(),
+  lat: z.preprocess(coordPreprocess, z.coerce.number().optional()),
+  long: z.preprocess(coordPreprocess, z.coerce.number().optional()),
   capacity_min: z.coerce.number().int().min(1),
   capacity_max: z.coerce.number().int().min(1),
   price_per_person: z.coerce.number().int().min(0),
@@ -58,9 +60,46 @@ const venueWritableBodySchema = z.object({
   operating_hours: z.record(z.unknown()).optional(),
 })
 
-const createVenueBodySchema = venueWritableBodySchema.refine((data) => data.capacity_max >= data.capacity_min, {
-  message: "capacity_max must be >= capacity_min",
-  path: ["capacity_max"],
+const createVenueBodySchema = venueWritableBodySchema
+  .refine((data) => data.capacity_max >= data.capacity_min, {
+    message: "capacity_max must be >= capacity_min",
+    path: ["capacity_max"],
+  })
+  .superRefine((data, ctx) => {
+    const { lat, long: lon } = data
+    const hasLat = lat != null && Number.isFinite(lat)
+    const hasLon = lon != null && Number.isFinite(lon)
+    if (hasLat !== hasLon) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Өргөрөг, уртрагыг хамтад нь оруулна уу",
+        path: ["lat"],
+      })
+    }
+    if (hasLat && (lat! < -90 || lat! > 90)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Өргөрөг -90 … 90 хооронд байна",
+        path: ["lat"],
+      })
+    }
+    if (hasLon && (lon! < -180 || lon! > 180)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Уртраг -180 … 180 хооронд байна",
+        path: ["long"],
+      })
+    }
+  })
+
+const reviewsListQuerySchema = z.object({
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(50).default(20),
+})
+
+const createReviewBodySchema = z.object({
+  rating: z.coerce.number().int().min(1).max(5),
+  comment: z.preprocess(emptyToUndef, z.string().trim().max(2000).optional()),
 })
 
 const patchVenueBodySchema = venueWritableBodySchema
@@ -76,6 +115,33 @@ const patchVenueBodySchema = venueWritableBodySchema
         code: z.ZodIssueCode.custom,
         message: "capacity_max must be >= capacity_min",
         path: ["capacity_max"],
+      })
+    }
+    const anyCoord = val.lat !== undefined || val.long !== undefined
+    if (!anyCoord) return
+    const lat = val.lat
+    const lon = val.long
+    const hasLat = lat != null && Number.isFinite(lat)
+    const hasLon = lon != null && Number.isFinite(lon)
+    if (hasLat !== hasLon) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Өргөрөг, уртрагыг хамтад нь оруулна уу",
+        path: ["lat"],
+      })
+    }
+    if (hasLat && (lat! < -90 || lat! > 90)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Өргөрөг -90 … 90 хооронд байна",
+        path: ["lat"],
+      })
+    }
+    if (hasLon && (lon! < -180 || lon! > 180)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Уртраг -180 … 180 хооронд байна",
+        path: ["long"],
       })
     }
   })
@@ -176,6 +242,9 @@ venuesRouter.post("/", authenticate, requireProvider, zValidator("json", createV
 
   const slug = await generateUniqueVenueSlug(body.name)
 
+  const lat = body.lat != null && Number.isFinite(body.lat) ? body.lat : null
+  const long = body.long != null && Number.isFinite(body.long) ? body.long : null
+
   const row = {
     slug,
     provider_id: user.id,
@@ -186,8 +255,8 @@ venuesRouter.post("/", authenticate, requireProvider, zValidator("json", createV
     location: body.location,
     district: body.district ?? null,
     address: body.address ?? null,
-    latitude: body.latitude ?? null,
-    longitude: body.longitude ?? null,
+    lat,
+    long,
     capacity_min: body.capacity_min,
     capacity_max: body.capacity_max,
     price_per_person: body.price_per_person,
@@ -206,6 +275,74 @@ venuesRouter.post("/", authenticate, requireProvider, zValidator("json", createV
   if (error) {
     console.error("venues insert", error)
     return c.json({ error: error.message }, 400)
+  }
+
+  return c.json({ data }, 201)
+})
+
+venuesRouter.get("/:id/reviews", zValidator("query", reviewsListQuerySchema), async (c) => {
+  const venueId = c.req.param("id")
+  if (!z.string().uuid().safeParse(venueId).success) {
+    return c.json({ error: "Байршлын ID буруу байна" }, 400)
+  }
+
+  const { page, limit } = c.req.valid("query")
+  const offset = (page - 1) * limit
+
+  const { data: venue } = await supabase.from("venues").select("id").eq("id", venueId).maybeSingle()
+  if (!venue) return c.json({ error: "Venue not found" }, 404)
+
+  const { data, error, count } = await supabase
+    .from("venue_reviews")
+    .select("id, rating, comment, created_at, updated_at, user_id, profiles(full_name)", { count: "exact" })
+    .eq("venue_id", venueId)
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1)
+
+  if (error) return c.json({ error: error.message }, 500)
+
+  return c.json({
+    data,
+    meta: {
+      total: count ?? 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count ?? 0) / limit),
+    },
+  })
+})
+
+venuesRouter.post("/:id/reviews", authenticate, zValidator("json", createReviewBodySchema), async (c) => {
+  const venueId = c.req.param("id")
+  if (!z.string().uuid().safeParse(venueId).success) {
+    return c.json({ error: "Байршлын ID буруу байна" }, 400)
+  }
+
+  const user = c.var.user
+  const { rating, comment } = c.req.valid("json")
+
+  const { data: venue } = await supabase.from("venues").select("id").eq("id", venueId).maybeSingle()
+  if (!venue) return c.json({ error: "Venue not found" }, 404)
+
+  const { data, error } = await supabase
+    .from("venue_reviews")
+    .upsert(
+      {
+        venue_id: venueId,
+        user_id: user.id,
+        rating,
+        comment: comment ?? null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "venue_id,user_id" },
+    )
+    .select("id, rating, comment, created_at, updated_at, user_id, profiles(full_name)")
+    .single()
+
+  if (error) {
+    console.error("venue_reviews upsert", error)
+    const msg = error.code === "23503" ? "Профайл олдсонгүй. Дахин нэвтэрнэ үү." : error.message
+    return c.json({ error: msg }, 400)
   }
 
   return c.json({ data }, 201)
@@ -252,7 +389,27 @@ venuesRouter.get("/:id/availability", async (c) => {
     return c.json({ error: slotsErr.message }, 500)
   }
 
-  return c.json({ data: { slots, startDate, endDate } })
+  const { data: bookedRows, error: bookedErr } = await supabase
+    .from("venue_booked_dates")
+    .select("booking_date")
+    .eq("venue_id", venueId)
+    .gte("booking_date", startDate)
+    .lte("booking_date", endDate)
+
+  if (bookedErr) {
+    return c.json({ error: bookedErr.message }, 500)
+  }
+
+  const bookedDates = [
+    ...new Set(
+      (bookedRows ?? []).map((r) => {
+        const d = r.booking_date as string
+        return d.length >= 10 ? d.slice(0, 10) : d
+      }),
+    ),
+  ].sort()
+
+  return c.json({ data: { slots, startDate, endDate, bookedDates } })
 })
 
 venuesRouter.patch("/:id", authenticate, requireProvider, zValidator("json", patchVenueBodySchema), async (c) => {
@@ -262,7 +419,15 @@ venuesRouter.patch("/:id", authenticate, requireProvider, zValidator("json", pat
 
   const updates: Record<string, unknown> = {}
   for (const [key, val] of Object.entries(body)) {
+    if (key === "lat" || key === "long") continue
     if (val !== undefined) updates[key] = val
+  }
+
+  if (body.lat !== undefined) {
+    updates.lat = body.lat != null && Number.isFinite(body.lat) ? body.lat : null
+  }
+  if (body.long !== undefined) {
+    updates.long = body.long != null && Number.isFinite(body.long) ? body.long : null
   }
 
   if (updates.website === "") updates.website = null

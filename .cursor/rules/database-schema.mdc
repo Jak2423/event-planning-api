@@ -16,7 +16,7 @@ Authoritative Supabase tables. Use exact column names in queries — do not inve
 ## `venues`
 - `id` uuid PK, `slug` (unique), `provider_id` → `auth.users` (nullable)
 - `category_id` → `categories` (NOT NULL)
-- `name`, `description`, `short_description`, `location`, `district`, `address`, `latitude`, `longitude`
+- `name`, `description`, `short_description`, `location`, `district`, `address`, `lat`, `long`
 - `capacity_min` (default 10), `capacity_max` (default 500)
 - `rating`, `review_count`, `is_featured`, `is_new`
 - `image_url`, `images` (text[]), `amenities` (text[]), `operating_hours` (jsonb)
@@ -33,7 +33,16 @@ Recurring weekly pricing per venue (day-of-week granularity — **not hourly**).
 - Unique constraint: `(venue_id, day_of_week)`
 
 ## `orders`
-Checkout orders created by authenticated customers (`POST /orders/make-order`). Columns used by this API include `user_id`, customer contact fields, `items` (jsonb line items), `subtotal`, `total`, `status`, timestamps.
+Checkout orders created by authenticated customers (`POST /orders/make-order`). `id` is the primary key. Columns used by this API include `user_id`, customer contact fields, `items` (jsonb line items with `venueId`, `bookingDate`, …), `subtotal`, `total`, `status` (`pending` \| `paid` \| `cancelled`), timestamps. **`paid`** = provider-verified; drives `venue_booked_dates`.
+
+## `venue_booked_dates`
+Rows derived from **paid** orders (one per line item: `venue_id`, `booking_date`). Cascades when the parent `orders` row is deleted. Public SELECT for calendar “already booked” days.
+
+## `venue_wishlists`
+Saved venues (wishlist) per user.
+- `id` uuid PK, `user_id` → `profiles(id)`, `venue_id` → `venues`
+- `created_at`
+- UNIQUE `(user_id, venue_id)`
 
 ## Query patterns
 
