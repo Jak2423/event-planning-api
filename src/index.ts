@@ -8,6 +8,7 @@ import { logger } from 'hono/logger';
 import { adminOrdersRouter } from './routes/admin/orders.js';
 import { adminProvidersRouter } from './routes/admin/providers.js';
 import { categoriesRouter } from './routes/categories.js';
+import { monitoringRouter } from './routes/monitoring.js';
 import { ordersRouter } from './routes/orders.js';
 import { providerRouter } from './routes/provider.js';
 import { timeSlotsRouter } from './routes/time-slots.js';
@@ -43,6 +44,7 @@ app.route('/wishlist', wishlistRouter);
 app.route('/provider', providerRouter);
 app.route('/admin/orders', adminOrdersRouter);
 app.route('/admin/providers', adminProvidersRouter);
+app.route('/monitoring', monitoringRouter);
 
 app.onError((err, c) => {
 	if (err instanceof HTTPException) {
