@@ -40,7 +40,6 @@ monitoringRouter.post(
 			data: {
 				access_token: token,
 				token_type: 'Bearer',
-				expires_in: 12 * 60 * 60,
 				auth_source: session.source,
 				monitoring_admin_id: session.source === 'db' ? session.monitoringAdminId : null,
 			},

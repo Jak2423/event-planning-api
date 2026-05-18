@@ -27,11 +27,10 @@ export async function signSuperadminAccessToken(args: {
 		.setSubject(args.monitoringAdminId ?? args.username)
 		.setIssuer(ISSUER)
 		.setIssuedAt()
-		.setExpirationTime('12h')
 		.sign(key);
 }
 
-/** @throws Error if invalid or expired */
+/** @throws Error if signature/claims invalid (`exp` omitted — rotate secret or revoke session server-side when needed). */
 export async function verifySuperadminAccessToken(
 	token: string,
 ): Promise<{ username: string; monitoringAdminId?: string }> {
