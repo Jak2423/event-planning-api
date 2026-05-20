@@ -422,15 +422,31 @@ venuesRouter.get(
     if (error) return c.json({ error: error.message }, 500)
     if (!data) return c.json({ error: "Venue not found" }, 404)
 
-    const { data: event_packages } = await supabase
-      .from("venue_event_packages")
-      .select(
-        "id, venue_id, slug, name, short_description, price_flat, guests_min, guests_max, sort_order, is_active, created_at, updated_at, venue_package_services (*)",
-      )
-      .eq("venue_id", venueId)
-      .order("sort_order", { ascending: true })
+    const packageServiceSelect =
+      "id, package_id, kind, title, description, quantity, is_included, sort_order, provider_service_id, provider_services (id, slug, name, kind, price_flat, image_url)"
 
-    return c.json({ data: { ...data, event_packages: event_packages ?? [] } })
+    const [{ data: event_packages }, { data: provider_services }] = await Promise.all([
+      supabase
+        .from("venue_event_packages")
+        .select(
+          `id, venue_id, slug, name, short_description, price_flat, guests_min, guests_max, sort_order, is_active, created_at, updated_at, venue_package_services (${packageServiceSelect})`,
+        )
+        .eq("venue_id", venueId)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("provider_services")
+        .select("id, slug, name, kind, price_flat, status, image_url, sort_order")
+        .eq("provider_id", data.provider_id)
+        .order("sort_order", { ascending: true }),
+    ])
+
+    return c.json({
+      data: {
+        ...data,
+        event_packages: event_packages ?? [],
+        provider_services: provider_services ?? [],
+      },
+    })
   },
 )
 

@@ -6,14 +6,21 @@ import { assertProviderAccess, authenticate, requireProvider } from '../middlewa
 import { supabase } from '../lib/supabase.js';
 import type { AuthUser } from '../types/index.js';
 
+/** Aligns with provider_services.kind + legacy manual kinds (food, staff). */
 const PACKAGE_SERVICE_KINDS = [
 	'food',
 	'cake',
+	'car',
+	'photoshoot',
 	'entertainment',
 	'decoration',
+	'catering',
 	'staff',
 	'other',
 ] as const;
+
+const PACKAGE_SERVICE_SELECT =
+	'id, package_id, kind, title, description, quantity, is_included, sort_order, provider_service_id, provider_services (id, slug, name, kind, price_flat, image_url)';
 
 const slugifyAscii = (input: string): string => {
 	const s = input
@@ -61,16 +68,123 @@ type PackageSvc = {
 	quantity: unknown;
 	is_included: unknown;
 	sort_order: unknown;
+	provider_service_id?: unknown;
+	provider_services?: Record<string, unknown> | null;
 };
 
-const packageServiceSchema = z.object({
-	kind: z.enum(PACKAGE_SERVICE_KINDS),
-	title: z.string().trim().min(1),
-	description: z.preprocess((v) => (v === '' || v === undefined ? undefined : v), z.string().trim().max(2000).optional()),
-	quantity: z.coerce.number().int().min(1).default(1),
-	is_included: z.boolean().default(true),
-	sort_order: z.coerce.number().int().default(0),
-});
+const packageServiceSchema = z
+	.object({
+		/** Link to provider_services — fills kind/title from catalog when omitted. */
+		provider_service_id: z.string().uuid().optional(),
+		kind: z.enum(PACKAGE_SERVICE_KINDS).optional(),
+		title: z.string().trim().min(1).optional(),
+		description: z.preprocess(
+			(v) => (v === '' || v === undefined ? undefined : v),
+			z.string().trim().max(2000).optional(),
+		),
+		quantity: z.coerce.number().int().min(1).default(1),
+		is_included: z.boolean().default(true),
+		sort_order: z.coerce.number().int().default(0),
+	})
+	.superRefine((s, ctx) => {
+		if (s.provider_service_id) return;
+		if (!s.kind) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'kind required without provider_service_id', path: ['kind'] });
+		}
+		if (!s.title?.trim()) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: 'title required without provider_service_id',
+				path: ['title'],
+			});
+		}
+	});
+
+type PackageServiceInput = z.infer<typeof packageServiceSchema>;
+
+type ResolvedPackageLine = {
+	package_id: string;
+	kind: string;
+	title: string;
+	description: string | null;
+	quantity: number;
+	is_included: boolean;
+	sort_order: number;
+	provider_service_id: string | null;
+};
+
+const providerKindToPackageKind = (kind: string): (typeof PACKAGE_SERVICE_KINDS)[number] => {
+	if ((PACKAGE_SERVICE_KINDS as readonly string[]).includes(kind)) {
+		return kind as (typeof PACKAGE_SERVICE_KINDS)[number];
+	}
+	return 'other';
+};
+
+async function getVenueProviderId(venueId: string): Promise<string | null> {
+	const { data } = await supabase.from('venues').select('provider_id').eq('id', venueId).maybeSingle();
+	return data?.provider_id ?? null;
+}
+
+/** Resolve manual lines or provider_services links for bundle included items. */
+export async function resolvePackageServiceLines(
+	venueId: string,
+	packageId: string,
+	services: PackageServiceInput[],
+): Promise<
+	{ ok: true; lines: ResolvedPackageLine[] } | { ok: false; error: string; statusCode: 400 | 403 | 404 | 500 }
+> {
+	const providerId = await getVenueProviderId(venueId);
+	if (!providerId) {
+		return { ok: false, error: 'Байршлын provider олдсонгүй', statusCode: 400 };
+	}
+
+	const lines: ResolvedPackageLine[] = [];
+
+	for (const s of services) {
+		if (s.provider_service_id) {
+			const { data: ps, error } = await supabase
+				.from('provider_services')
+				.select('id, provider_id, name, kind, short_description')
+				.eq('id', s.provider_service_id)
+				.maybeSingle();
+
+			if (error || !ps) {
+				return { ok: false, error: 'Үйлчилгээ олдсонгүй', statusCode: 400 };
+			}
+			if (ps.provider_id !== providerId) {
+				return {
+					ok: false,
+					error: 'Зөвхөн өөрийн үйлчилгээг багцад нэмнэ үү',
+					statusCode: 403,
+				};
+			}
+
+			lines.push({
+				package_id: packageId,
+				kind: providerKindToPackageKind(String(ps.kind)),
+				title: ps.name.trim(),
+				description: s.description ?? ps.short_description ?? null,
+				quantity: s.quantity,
+				is_included: s.is_included,
+				sort_order: s.sort_order,
+				provider_service_id: ps.id,
+			});
+		} else {
+			lines.push({
+				package_id: packageId,
+				kind: s.kind!,
+				title: s.title!.trim(),
+				description: s.description ?? null,
+				quantity: s.quantity,
+				is_included: s.is_included,
+				sort_order: s.sort_order,
+				provider_service_id: null,
+			});
+		}
+	}
+
+	return { ok: true, lines };
+}
 
 export const createPackageBodySchema = z.object({
 	slug: z.preprocess(
@@ -144,7 +258,7 @@ export async function updateVenuePackageRecord(
 	body: CreatePackageBody,
 ): Promise<
 	| { ok: true; data: Record<string, unknown> }
-	| { ok: false; error: string; statusCode: 400 | 404 | 409 | 500 }
+	| { ok: false; error: string; statusCode: 400 | 403 | 404 | 409 | 500 }
 > {
 	const updates: Record<string, unknown> = {
 		name: body.name.trim(),
@@ -171,23 +285,23 @@ export async function updateVenuePackageRecord(
 	const { error: delErr } = await supabase.from('venue_package_services').delete().eq('package_id', packageId);
 	if (delErr) return { ok: false, error: delErr.message, statusCode: 400 };
 
+	const { data: pkgVenue } = await supabase
+		.from('venue_event_packages')
+		.select('venue_id')
+		.eq('id', packageId)
+		.maybeSingle();
+	if (!pkgVenue) return { ok: false, error: 'Багц олдсонгүй', statusCode: 404 };
+
 	if (body.services.length > 0) {
-		const lines = body.services.map((s) => ({
-			package_id: packageId,
-			kind: s.kind,
-			title: s.title.trim(),
-			description: s.description ?? null,
-			quantity: s.quantity,
-			is_included: s.is_included,
-			sort_order: s.sort_order,
-		}));
-		const { error: lineErr } = await supabase.from('venue_package_services').insert(lines);
+		const resolved = await resolvePackageServiceLines(pkgVenue.venue_id, packageId, body.services);
+		if (!resolved.ok) return resolved;
+		const { error: lineErr } = await supabase.from('venue_package_services').insert(resolved.lines);
 		if (lineErr) return { ok: false, error: lineErr.message, statusCode: 400 };
 	}
 
 	const { data: full } = await supabase
 		.from('venue_event_packages')
-		.select(`${PACKAGE_SELECT_DETAIL}, venue_package_services (*)`)
+		.select(`${PACKAGE_SELECT_DETAIL}, venue_package_services (${PACKAGE_SERVICE_SELECT})`)
 		.eq('id', packageId)
 		.maybeSingle();
 
@@ -204,7 +318,7 @@ export async function syncVenueEventPackages(
 	packages: UpsertEventPackageInput[],
 ): Promise<
 	| { ok: true; data: Record<string, unknown>[] }
-	| { ok: false; error: string; statusCode: 400 | 409 | 404 | 500 }
+	| { ok: false; error: string; statusCode: 400 | 403 | 404 | 409 | 500 }
 > {
 	if (packages.length > 30) {
 		return { ok: false, error: 'Хамгийн ихдээ 30 багц байна', statusCode: 400 };
@@ -255,7 +369,7 @@ export async function persistVenuePackage(
 	body: CreatePackageBody,
 ): Promise<
 	| { ok: true; data: Record<string, unknown> }
-	| { ok: false; error: string; statusCode: 400 | 409 | 500 }
+	| { ok: false; error: string; statusCode: 400 | 403 | 404 | 409 | 500 }
 > {
 	const slug =
 		body.slug != null && body.slug.trim().length > 0
@@ -297,16 +411,12 @@ export async function persistVenuePackage(
 	const newPkgId = String((pkg as { id: string }).id);
 
 	if (body.services.length > 0) {
-		const lines = body.services.map((s) => ({
-			package_id: newPkgId,
-			kind: s.kind,
-			title: s.title.trim(),
-			description: s.description ?? null,
-			quantity: s.quantity,
-			is_included: s.is_included,
-			sort_order: s.sort_order,
-		}));
-		const { error: lineErr } = await supabase.from('venue_package_services').insert(lines);
+		const resolved = await resolvePackageServiceLines(venueId, newPkgId, body.services);
+		if (!resolved.ok) {
+			await supabase.from('venue_event_packages').delete().eq('id', newPkgId);
+			return resolved;
+		}
+		const { error: lineErr } = await supabase.from('venue_package_services').insert(resolved.lines);
 		if (lineErr) {
 			await supabase.from('venue_event_packages').delete().eq('id', newPkgId);
 			return { ok: false, error: lineErr.message, statusCode: 400 };
@@ -315,7 +425,7 @@ export async function persistVenuePackage(
 
 	const { data: full, error: loadErr } = await supabase
 		.from('venue_event_packages')
-		.select(`${PACKAGE_SELECT_DETAIL}, venue_package_services (*)`)
+		.select(`${PACKAGE_SELECT_DETAIL}, venue_package_services (${PACKAGE_SERVICE_SELECT})`)
 		.eq('id', newPkgId)
 		.maybeSingle();
 
@@ -346,7 +456,7 @@ venuePackagesRouter.get(
 
 		const { data, error } = await supabase
 			.from('venue_event_packages')
-			.select(`${PACKAGE_SELECT_DETAIL}, venue_package_services (*)`)
+			.select(`${PACKAGE_SELECT_DETAIL}, venue_package_services (${PACKAGE_SERVICE_SELECT})`)
 			.eq('venue_id', vid)
 			.order('sort_order', { ascending: true })
 			.order('created_at', { ascending: false });
@@ -397,7 +507,7 @@ venuePackagesRouter.get('/:id/event-packages', async (c) => {
 
 	const { data, error } = await supabase
 		.from('venue_event_packages')
-		.select(`${PACKAGE_SELECT_PUBLIC}, venue_package_services (*)`)
+		.select(`${PACKAGE_SELECT_PUBLIC}, venue_package_services (${PACKAGE_SERVICE_SELECT})`)
 		.eq('venue_id', vid)
 		.eq('is_active', true)
 		.order('sort_order', { ascending: true })
@@ -483,23 +593,16 @@ venuePackagesRouter.patch(
 			const { error: delErr } = await supabase.from('venue_package_services').delete().eq('package_id', pkgId);
 			if (delErr) return c.json({ error: delErr.message }, 400);
 			if (body.services.length > 0) {
-				const lines = body.services.map((s) => ({
-					package_id: pkgId,
-					kind: s.kind,
-					title: s.title.trim(),
-					description: s.description ?? null,
-					quantity: s.quantity,
-					is_included: s.is_included,
-					sort_order: s.sort_order,
-				}));
-				const { error: lineErr } = await supabase.from('venue_package_services').insert(lines);
+				const resolved = await resolvePackageServiceLines(existing.venue_id, pkgId, body.services);
+				if (!resolved.ok) return c.json({ error: resolved.error }, resolved.statusCode);
+				const { error: lineErr } = await supabase.from('venue_package_services').insert(resolved.lines);
 				if (lineErr) return c.json({ error: lineErr.message }, 400);
 			}
 		}
 
 		const { data: full } = await supabase
 			.from('venue_event_packages')
-			.select(`${PACKAGE_SELECT_DETAIL}, venue_package_services (*)`)
+			.select(`${PACKAGE_SELECT_DETAIL}, venue_package_services (${PACKAGE_SERVICE_SELECT})`)
 			.eq('id', pkgId)
 			.maybeSingle();
 
@@ -549,10 +652,15 @@ export function buildPackageSnapshot(pkg: Record<string, unknown>): Record<strin
 		price_flat: pkg.price_flat,
 		services_included: services
 			.filter((s) => s.is_included !== false)
-			.map((s) => ({
-				kind: s.kind,
-				title: s.title,
-				quantity: s.quantity ?? 1,
-			})),
+			.map((s) => {
+				const linked = s.provider_services as Record<string, unknown> | null | undefined;
+				return {
+					kind: s.kind,
+					title: s.title,
+					quantity: s.quantity ?? 1,
+					provider_service_id: s.provider_service_id ?? null,
+					provider_service_slug: linked?.slug ?? null,
+				};
+			}),
 	};
 }
