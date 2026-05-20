@@ -1,11 +1,5 @@
 import { supabase } from "./supabase.js"
-
-type OrderItemJson = {
-	venueId?: string
-	categoryLabel?: string
-	name?: string
-	price?: number
-}
+import { isServiceOrderItem, parseOrderItems, type OrderItemJson } from "./order-items.js"
 
 export type OrderRow = {
 	id: string
@@ -33,23 +27,58 @@ export const getProviderVenueIds = async (providerId: string): Promise<string[]>
 	return (data ?? []).map((r) => r.id as string)
 }
 
-const parseItems = (items: unknown): OrderItemJson[] => (Array.isArray(items) ? items : []) as OrderItemJson[]
+export const getProviderServiceIds = async (providerId: string): Promise<string[]> => {
+	const { data, error } = await supabase
+		.from("provider_services")
+		.select("id")
+		.eq("provider_id", providerId)
 
-export const orderTouchesVenues = (order: Pick<OrderRow, "items">, venueIds: Set<string>): boolean => {
-	if (venueIds.size === 0) return false
-	return parseItems(order.items).some((i) => i.venueId != null && venueIds.has(i.venueId))
+	if (error) {
+		console.error("provider services", error)
+		return []
+	}
+
+	return (data ?? []).map((r) => r.id as string)
 }
 
-export const providerShareFromOrder = (order: Pick<OrderRow, "items">, venueIds: Set<string>): number => {
-	if (venueIds.size === 0) return 0
-	return parseItems(order.items)
-		.filter((i) => i.venueId != null && venueIds.has(i.venueId))
+export const orderTouchesProvider = (
+	order: Pick<OrderRow, "items">,
+	venueIds: Set<string>,
+	serviceIds: Set<string>,
+): boolean => {
+	if (venueIds.size === 0 && serviceIds.size === 0) return false
+	return parseOrderItems(order.items).some((i) => {
+		if (isServiceOrderItem(i)) return i.serviceId != null && serviceIds.has(i.serviceId)
+		return i.venueId != null && venueIds.has(i.venueId)
+	})
+}
+
+/** @deprecated Use orderTouchesProvider */
+export const orderTouchesVenues = (order: Pick<OrderRow, "items">, venueIds: Set<string>): boolean =>
+	orderTouchesProvider(order, venueIds, new Set())
+
+export const providerShareFromOrder = (
+	order: Pick<OrderRow, "items">,
+	venueIds: Set<string>,
+	serviceIds: Set<string> = new Set(),
+): number => {
+	return parseOrderItems(order.items)
+		.filter((i) => {
+			if (isServiceOrderItem(i)) return i.serviceId != null && serviceIds.has(i.serviceId)
+			return i.venueId != null && venueIds.has(i.venueId)
+		})
 		.reduce((s, i) => s + (Number(i.price) || 0), 0)
 }
 
-export const eventTypeLabelForProvider = (order: Pick<OrderRow, "items">, venueIds: Set<string>): string => {
-	if (venueIds.size === 0) return "—"
-	const hit = parseItems(order.items).find((i) => i.venueId != null && venueIds.has(i.venueId))
+export const eventTypeLabelForProvider = (
+	order: Pick<OrderRow, "items">,
+	venueIds: Set<string>,
+	serviceIds: Set<string> = new Set(),
+): string => {
+	const hit = parseOrderItems(order.items).find((i) => {
+		if (isServiceOrderItem(i)) return i.serviceId != null && serviceIds.has(i.serviceId)
+		return i.venueId != null && venueIds.has(i.venueId)
+	})
 	return hit?.categoryLabel?.trim() || hit?.name?.trim() || "—"
 }
 

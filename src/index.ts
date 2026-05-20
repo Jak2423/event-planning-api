@@ -13,6 +13,7 @@ import { ordersRouter } from './routes/orders.js';
 import { providerRouter } from './routes/provider.js';
 import { timeSlotsRouter } from './routes/time-slots.js';
 import { uploadsRouter } from './routes/uploads.js';
+import { servicesRouter } from './routes/services.js';
 import { venuesRouter } from './routes/venues.js';
 import { wishlistRouter } from './routes/wishlist.js';
 
@@ -36,6 +37,7 @@ app.use(
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
 app.route('/venues', venuesRouter);
+app.route('/services', servicesRouter);
 app.route('/uploads', uploadsRouter);
 app.route('/time-slots', timeSlotsRouter);
 app.route('/categories', categoriesRouter);

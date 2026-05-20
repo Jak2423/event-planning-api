@@ -4,10 +4,22 @@ import { zValidator } from "@hono/zod-validator"
 import { z } from "zod"
 import { supabase } from "../lib/supabase.js"
 import {
+  assertVenueOwnerOrAdmin,
+  VENUE_STATUSES,
+  venueAccessErrorResponse,
+} from "../lib/venue-access.js"
+import {
   assertScopedProviderVenueAccess,
   authenticate,
   requireProvider,
 } from "../middleware/auth.js"
+import {
+  createPackageBodySchema,
+  persistVenuePackage,
+  syncVenueEventPackages,
+  upsertEventPackageInputSchema,
+  venuePackagesRouter,
+} from "./venue-packages.js"
 
 export const venuesRouter = new Hono()
 
@@ -32,6 +44,14 @@ const listQuerySchema = z.object({
   sort: z.enum(["rating", "newest", "price_asc", "price_desc", "name"]).default("rating"),
   page: z.coerce.number().min(1).default(1),
   limit: z.coerce.number().min(1).max(50).default(12),
+})
+
+const venueIdParamSchema = z.object({
+  id: z.string().uuid("Байршлын ID буруу байна"),
+})
+
+const patchVenueStatusBodySchema = z.object({
+  status: z.enum(VENUE_STATUSES),
 })
 
 const emptyToUndef = (v: unknown) => (v === "" || v === null ? undefined : v)
@@ -61,6 +81,10 @@ const venueWritableBodySchema = z.object({
 })
 
 const createVenueBodySchema = venueWritableBodySchema
+  .extend({
+    /** Optional bundles; created after venue row (rollback venue if any package fails). */
+    event_packages: z.array(createPackageBodySchema).max(30).optional(),
+  })
   .refine((data) => data.capacity_max >= data.capacity_min, {
     message: "capacity_max must be >= capacity_min",
     path: ["capacity_max"],
@@ -105,6 +129,10 @@ const createReviewBodySchema = z.object({
 const patchVenueBodySchema = venueWritableBodySchema
   .partial()
   .omit({ category_id: true })
+  .extend({
+    /** Full bundle list for this venue: update by `id`, create without `id`, remove omitted packages. */
+    event_packages: z.array(upsertEventPackageInputSchema).max(30).optional(),
+  })
   .superRefine((val, ctx) => {
     if (
       val.capacity_min != null &&
@@ -195,10 +223,11 @@ venuesRouter.get("/", zValidator("query", listQuerySchema), async (c) => {
   let query = supabase
     .from("venues")
     .select(
-      "id, slug, name, short_description, location, district, capacity_min, capacity_max, price_per_person, rating, review_count, image_url, images, is_featured, is_new, created_at, categories(id, slug, name)",
+      "id, slug, name, short_description, location, district, capacity_min, capacity_max, price_per_person, rating, review_count, image_url, images, is_featured, is_new, status, created_at, categories(id, slug, name)",
       { count: "exact" },
     )
     .order(sortOpt.column, { ascending: sortOpt.ascending })
+    .eq("status", "published")
     .range(offset, offset + limit - 1)
 
   if (provider_id) {
@@ -268,17 +297,36 @@ venuesRouter.post("/", authenticate, requireProvider, zValidator("json", createV
     images: body.images ?? null,
     operating_hours: body.operating_hours ?? {},
     is_new: true,
+    status: "draft" as const,
   }
 
   const { data, error } = await supabase.from("venues").insert(row).select("*, categories(slug, name)").single()
 
-  if (error) {
+  if (error || !data) {
     console.error("venues insert", error)
-    return c.json({ error: error.message }, 400)
+    return c.json({ error: error?.message ?? "Insert failed" }, 400)
   }
 
-  return c.json({ data }, 201)
+  const venueId = typeof data.id === "string" ? data.id : String(data.id)
+
+  const toCreate = body.event_packages ?? []
+  const event_packages: Record<string, unknown>[] = []
+
+  if (toCreate.length > 0) {
+    for (const pkgBody of toCreate) {
+      const persisted = await persistVenuePackage(venueId, pkgBody)
+      if (!persisted.ok) {
+        await supabase.from("venues").delete().eq("id", venueId)
+        return c.json({ error: persisted.error }, persisted.statusCode)
+      }
+      event_packages.push(persisted.data)
+    }
+  }
+
+  return c.json({ data: { ...data, event_packages } }, 201)
 })
+
+venuesRouter.route("/", venuePackagesRouter)
 
 venuesRouter.get("/:id/reviews", zValidator("query", reviewsListQuerySchema), async (c) => {
   const venueId = c.req.param("id")
@@ -348,6 +396,44 @@ venuesRouter.post("/:id/reviews", authenticate, zValidator("json", createReviewB
   return c.json({ data }, 201)
 })
 
+/** Provider/admin — full venue by UUID (any status). */
+venuesRouter.get(
+  "/:id/manage",
+  authenticate,
+  requireProvider,
+  zValidator("param", venueIdParamSchema),
+  async (c) => {
+    const { id: venueId } = c.req.valid("param")
+    const user = c.var.user
+
+    try {
+      await assertVenueOwnerOrAdmin(user, venueId)
+    } catch (e) {
+      const { message, status } = venueAccessErrorResponse(e)
+      return c.json({ error: message }, status)
+    }
+
+    const { data, error } = await supabase
+      .from("venues")
+      .select("*, categories(slug, name)")
+      .eq("id", venueId)
+      .maybeSingle()
+
+    if (error) return c.json({ error: error.message }, 500)
+    if (!data) return c.json({ error: "Venue not found" }, 404)
+
+    const { data: event_packages } = await supabase
+      .from("venue_event_packages")
+      .select(
+        "id, venue_id, slug, name, short_description, price_flat, guests_min, guests_max, sort_order, is_active, created_at, updated_at, venue_package_services (*)",
+      )
+      .eq("venue_id", venueId)
+      .order("sort_order", { ascending: true })
+
+    return c.json({ data: { ...data, event_packages: event_packages ?? [] } })
+  },
+)
+
 venuesRouter.get("/:slug", async (c) => {
   const slug = c.req.param("slug")
 
@@ -355,6 +441,7 @@ venuesRouter.get("/:slug", async (c) => {
     .from("venues")
     .select("*, categories(slug, name)")
     .eq("slug", slug)
+    .eq("status", "published")
     .maybeSingle()
 
   if (error) return c.json({ error: error.message }, 500)
@@ -365,6 +452,18 @@ venuesRouter.get("/:slug", async (c) => {
 
 venuesRouter.get("/:id/availability", async (c) => {
   const venueId = c.req.param("id")
+  if (!z.string().uuid().safeParse(venueId).success) {
+    return c.json({ error: "Байршлын ID буруу байна" }, 400)
+  }
+
+  const { data: venue } = await supabase
+    .from("venues")
+    .select("id")
+    .eq("id", venueId)
+    .eq("status", "published")
+    .maybeSingle()
+  if (!venue) return c.json({ error: "Venue not found" }, 404)
+
   const month = c.req.query("month")
 
   let startDate: string
@@ -412,13 +511,93 @@ venuesRouter.get("/:id/availability", async (c) => {
   return c.json({ data: { slots, startDate, endDate, bookedDates } })
 })
 
-venuesRouter.patch("/:id", authenticate, requireProvider, zValidator("json", patchVenueBodySchema), async (c) => {
-  const venueId = c.req.param("id")
+venuesRouter.patch(
+  "/:id/status",
+  authenticate,
+  requireProvider,
+  zValidator("param", venueIdParamSchema),
+  zValidator("json", patchVenueStatusBodySchema),
+  async (c) => {
+    const { id: venueId } = c.req.valid("param")
+    const { status } = c.req.valid("json")
+    const user = c.var.user
+
+    try {
+      await assertVenueOwnerOrAdmin(user, venueId)
+    } catch (e) {
+      const { message, status: httpStatus } = venueAccessErrorResponse(e)
+      return c.json({ error: message }, httpStatus)
+    }
+
+    let qb = supabase
+      .from("venues")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", venueId)
+    if (user.role !== "admin") {
+      qb = qb.eq("provider_id", user.id)
+    }
+
+    const { data, error } = await qb.select("*, categories(slug, name)").maybeSingle()
+
+    if (error) return c.json({ error: error.message }, 400)
+    if (!data) return c.json({ error: "Venue not found or unauthorized" }, 404)
+
+    return c.json({ data })
+  },
+)
+
+venuesRouter.delete(
+  "/:id",
+  authenticate,
+  requireProvider,
+  zValidator("param", venueIdParamSchema),
+  async (c) => {
+    const { id: venueId } = c.req.valid("param")
+    const user = c.var.user
+
+    try {
+      await assertVenueOwnerOrAdmin(user, venueId)
+    } catch (e) {
+      const { message, status } = venueAccessErrorResponse(e)
+      return c.json({ error: message }, status)
+    }
+
+    let qb = supabase.from("venues").delete().eq("id", venueId)
+    if (user.role !== "admin") {
+      qb = qb.eq("provider_id", user.id)
+    }
+
+    const { data, error } = await qb.select("id, slug, name").maybeSingle()
+
+    if (error) return c.json({ error: error.message }, 400)
+    if (!data) return c.json({ error: "Venue not found or unauthorized" }, 404)
+
+    return c.json({ data: { deleted: true, id: data.id, slug: data.slug, name: data.name } })
+  },
+)
+
+venuesRouter.patch(
+  "/:id",
+  authenticate,
+  requireProvider,
+  zValidator("param", venueIdParamSchema),
+  zValidator("json", patchVenueBodySchema),
+  async (c) => {
+  const { id: venueId } = c.req.valid("param")
   const user = c.var.user
   const body = c.req.valid("json")
 
-  const updates: Record<string, unknown> = {}
-  for (const [key, val] of Object.entries(body)) {
+  try {
+    await assertVenueOwnerOrAdmin(user, venueId)
+  } catch (e) {
+    const { message, status } = venueAccessErrorResponse(e)
+    return c.json({ error: message }, status)
+  }
+
+  const { event_packages: eventPackagesPayload, ...venuePatch } = body
+
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  for (const [key, val] of Object.entries(venuePatch)) {
     if (key === "lat" || key === "long") continue
     if (val !== undefined) updates[key] = val
   }
@@ -440,20 +619,55 @@ venuesRouter.patch("/:id", authenticate, requireProvider, zValidator("json", pat
   delete updates.category_id
   delete updates.rating
   delete updates.review_count
+  delete updates.status
 
-  if (Object.keys(updates).length === 0) {
+  const hasVenueFieldUpdates = Object.keys(updates).filter((k) => k !== "updated_at").length > 0
+  const hasPackageUpdates = eventPackagesPayload !== undefined
+
+  if (!hasVenueFieldUpdates && !hasPackageUpdates) {
     return c.json({ error: "Шинэчлэх талбар алга байна" }, 400)
   }
 
-  let qb = supabase.from("venues").update(updates).eq("id", venueId)
-  if (user.role !== "admin") {
-    qb = qb.eq("provider_id", user.id)
+  let venueRow: Record<string, unknown> | null = null
+
+  if (hasVenueFieldUpdates) {
+    let qb = supabase.from("venues").update(updates).eq("id", venueId)
+    if (user.role !== "admin") {
+      qb = qb.eq("provider_id", user.id)
+    }
+
+    const { data, error } = await qb.select("*, categories(slug, name)").maybeSingle()
+
+    if (error) return c.json({ error: error.message }, 400)
+    if (!data) return c.json({ error: "Venue not found or unauthorized" }, 404)
+    venueRow = data as Record<string, unknown>
+  } else {
+    const { data, error } = await supabase
+      .from("venues")
+      .select("*, categories(slug, name)")
+      .eq("id", venueId)
+      .maybeSingle()
+    if (error) return c.json({ error: error.message }, 500)
+    if (!data) return c.json({ error: "Venue not found or unauthorized" }, 404)
+    venueRow = data as Record<string, unknown>
   }
 
-  const { data, error } = await qb.select("*, categories(slug, name)").maybeSingle()
+  let event_packages: Record<string, unknown>[] | undefined
+  if (hasPackageUpdates) {
+    const synced = await syncVenueEventPackages(venueId, eventPackagesPayload)
+    if (!synced.ok) return c.json({ error: synced.error }, synced.statusCode)
+    event_packages = synced.data
+  } else {
+    const { data: pkgs } = await supabase
+      .from("venue_event_packages")
+      .select(
+        "id, venue_id, slug, name, short_description, price_flat, guests_min, guests_max, sort_order, is_active, created_at, updated_at, venue_package_services (*)",
+      )
+      .eq("venue_id", venueId)
+      .order("sort_order", { ascending: true })
+    event_packages = (pkgs ?? []) as Record<string, unknown>[]
+  }
 
-  if (error) return c.json({ error: error.message }, 400)
-  if (!data) return c.json({ error: "Venue not found or unauthorized" }, 404)
-
-  return c.json({ data })
-})
+  return c.json({ data: { ...venueRow, event_packages } })
+  },
+)

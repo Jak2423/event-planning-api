@@ -7,8 +7,9 @@ import {
 	eventTypeLabelForProvider,
 	calendarMonthBoundsUtc,
 	fetchRecentOrders,
+	getProviderServiceIds,
 	getProviderVenueIds,
-	orderTouchesVenues,
+	orderTouchesProvider,
 	pctChange,
 	providerShareFromOrder,
 	type OrderRow,
@@ -33,19 +34,25 @@ const MAX_ORDER_SCAN = 4000
 providerRouter.get("/stats", async (c) => {
 	const user = c.var.user
 	const venueIdsArr = await getProviderVenueIds(user.id)
+	const serviceIdsArr = await getProviderServiceIds(user.id)
 	const venueIdSet = new Set(venueIdsArr)
+	const serviceIdSet = new Set(serviceIdsArr)
 
-	const { count: activeServices } = await supabase
-		.from("venues")
-		.select("id", { count: "exact", head: true })
-		.eq("provider_id", user.id)
+	const [{ count: venueCount }, { count: serviceCount }] = await Promise.all([
+		supabase.from("venues").select("id", { count: "exact", head: true }).eq("provider_id", user.id),
+		supabase
+			.from("provider_services")
+			.select("id", { count: "exact", head: true })
+			.eq("provider_id", user.id),
+	])
+	const activeServices = (venueCount ?? 0) + (serviceCount ?? 0)
 
 	const orders = await fetchRecentOrders(MAX_ORDER_SCAN)
-	const mine = orders.filter((o) => orderTouchesVenues(o, venueIdSet))
+	const mine = orders.filter((o) => orderTouchesProvider(o, venueIdSet, serviceIdSet))
 
 	let totalRevenue = 0
 	for (const o of mine) {
-		if (o.status === "paid") totalRevenue += providerShareFromOrder(o, venueIdSet)
+		if (o.status === "paid") totalRevenue += providerShareFromOrder(o, venueIdSet, serviceIdSet)
 	}
 
 	const thisMonth = calendarMonthBoundsUtc(0)
@@ -60,10 +67,10 @@ providerRouter.get("/stats", async (c) => {
 		const d = new Date(o.created_at)
 		if (d >= thisMonth.start && d < thisMonth.end) {
 			thisMonthOrders += 1
-			if (o.status === "paid") thisMonthRev += providerShareFromOrder(o, venueIdSet)
+			if (o.status === "paid") thisMonthRev += providerShareFromOrder(o, venueIdSet, serviceIdSet)
 		} else if (d >= lastMonth.start && d < lastMonth.end) {
 			lastMonthOrders += 1
-			if (o.status === "paid") lastMonthRev += providerShareFromOrder(o, venueIdSet)
+			if (o.status === "paid") lastMonthRev += providerShareFromOrder(o, venueIdSet, serviceIdSet)
 		}
 	}
 
@@ -71,7 +78,7 @@ providerRouter.get("/stats", async (c) => {
 		data: {
 			totalOrders: mine.length,
 			totalRevenue,
-			activeServices: activeServices ?? 0,
+			activeServices,
 			ordersTrendPercent: pctChange(thisMonthOrders, lastMonthOrders),
 			revenueTrendPercent: pctChange(thisMonthRev, lastMonthRev),
 		},
@@ -82,8 +89,9 @@ providerRouter.get("/orders", zValidator("query", listQuerySchema), async (c) =>
 	const user = c.var.user
 	const { page, limit, status } = c.req.valid("query")
 	const venueIdSet = new Set(await getProviderVenueIds(user.id))
+	const serviceIdSet = new Set(await getProviderServiceIds(user.id))
 
-	if (venueIdSet.size === 0) {
+	if (venueIdSet.size === 0 && serviceIdSet.size === 0) {
 		return c.json({
 			data: [],
 			meta: { total: 0, page, limit, totalPages: 0 },
@@ -91,7 +99,7 @@ providerRouter.get("/orders", zValidator("query", listQuerySchema), async (c) =>
 	}
 
 	const orders = await fetchRecentOrders(MAX_ORDER_SCAN)
-	let mine = orders.filter((o) => orderTouchesVenues(o, venueIdSet))
+	let mine = orders.filter((o) => orderTouchesProvider(o, venueIdSet, serviceIdSet))
 	if (status) mine = mine.filter((o) => o.status === status)
 
 	const total = mine.length
@@ -102,11 +110,11 @@ providerRouter.get("/orders", zValidator("query", listQuerySchema), async (c) =>
 		id: o.id,
 		display_ref: displayOrderRef(o.id),
 		customer_name: o.customer_name,
-		event_type_label: eventTypeLabelForProvider(o, venueIdSet),
+		event_type_label: eventTypeLabelForProvider(o, venueIdSet, serviceIdSet),
 		created_at: o.created_at,
 		status: o.status,
 		total: o.total,
-		provider_subtotal: providerShareFromOrder(o, venueIdSet),
+		provider_subtotal: providerShareFromOrder(o, venueIdSet, serviceIdSet),
 	}))
 
 	return c.json({
@@ -124,8 +132,9 @@ providerRouter.get("/orders/:id", zValidator("param", orderIdParam), async (c) =
 	const user = c.var.user
 	const { id } = c.req.valid("param")
 	const venueIdSet = new Set(await getProviderVenueIds(user.id))
+	const serviceIdSet = new Set(await getProviderServiceIds(user.id))
 
-	if (venueIdSet.size === 0) return c.json({ error: "Захиалга олдсонгүй" }, 404)
+	if (venueIdSet.size === 0 && serviceIdSet.size === 0) return c.json({ error: "Захиалга олдсонгүй" }, 404)
 
 	const { data, error } = await supabase
 		.from("orders")
@@ -140,14 +149,14 @@ providerRouter.get("/orders/:id", zValidator("param", orderIdParam), async (c) =
 	if (!data) return c.json({ error: "Захиалга олдсонгүй" }, 404)
 
 	const row = data as OrderRow
-	if (!orderTouchesVenues(row, venueIdSet)) return c.json({ error: "Захиалга олдсонгүй" }, 404)
+	if (!orderTouchesProvider(row, venueIdSet, serviceIdSet)) return c.json({ error: "Захиалга олдсонгүй" }, 404)
 
 	return c.json({
 		data: {
 			...row,
 			display_ref: displayOrderRef(row.id),
-			event_type_label: eventTypeLabelForProvider(row, venueIdSet),
-			provider_subtotal: providerShareFromOrder(row, venueIdSet),
+			event_type_label: eventTypeLabelForProvider(row, venueIdSet, serviceIdSet),
+			provider_subtotal: providerShareFromOrder(row, venueIdSet, serviceIdSet),
 		},
 	})
 })
@@ -161,8 +170,9 @@ providerRouter.patch(
 		const { id } = c.req.valid("param")
 		const { status } = c.req.valid("json")
 		const venueIdSet = new Set(await getProviderVenueIds(user.id))
+		const serviceIdSet = new Set(await getProviderServiceIds(user.id))
 
-		if (venueIdSet.size === 0) return c.json({ error: "Захиалга олдсонгүй" }, 404)
+		if (venueIdSet.size === 0 && serviceIdSet.size === 0) return c.json({ error: "Захиалга олдсонгүй" }, 404)
 
 		const { data: existing, error: loadErr } = await supabase
 			.from("orders")
@@ -177,7 +187,7 @@ providerRouter.patch(
 		if (!existing) return c.json({ error: "Захиалга олдсонгүй" }, 404)
 
 		const row = existing as OrderRow
-		if (!orderTouchesVenues(row, venueIdSet)) return c.json({ error: "Захиалга олдсонгүй" }, 404)
+		if (!orderTouchesProvider(row, venueIdSet, serviceIdSet)) return c.json({ error: "Захиалга олдсонгүй" }, 404)
 
 		const { data: updated, error: upErr } = await supabase
 			.from("orders")
@@ -197,8 +207,8 @@ providerRouter.patch(
 			data: {
 				...out,
 				display_ref: displayOrderRef(out.id),
-				event_type_label: eventTypeLabelForProvider(out, venueIdSet),
-				provider_subtotal: providerShareFromOrder(out, venueIdSet),
+				event_type_label: eventTypeLabelForProvider(out, venueIdSet, serviceIdSet),
+				provider_subtotal: providerShareFromOrder(out, venueIdSet, serviceIdSet),
 			},
 		})
 	},

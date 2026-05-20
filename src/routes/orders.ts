@@ -3,20 +3,146 @@ import { Hono } from 'hono';
 import { z } from 'zod';
 import { supabase } from '../lib/supabase.js';
 import { authenticate } from '../middleware/auth.js';
+import { buildPackageSnapshot } from './venue-packages.js';
+import { buildServiceSnapshot } from './services.js';
 
 export const ordersRouter = new Hono();
 
-const orderItemSchema = z.object({
-	venueId: z.string(),
+const orderLineDisplaySchema = {
 	name: z.string(),
 	providerLabel: z.string(),
 	category: z.string(),
 	categoryLabel: z.string(),
 	image: z.string().optional().default(''),
-	guestCount: z.number().int().min(1),
 	price: z.number().min(0),
 	bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+};
+
+const venueOrderItemSchema = z.object({
+	itemType: z.literal('venue').optional(),
+	venueId: z.string().uuid(),
+	...orderLineDisplaySchema,
+	guestCount: z.number().int().min(1),
+	packageId: z.string().uuid().optional(),
 });
+
+const serviceOrderItemSchema = z.object({
+	itemType: z.literal('service'),
+	serviceId: z.string().uuid(),
+	...orderLineDisplaySchema,
+	quantity: z.coerce.number().int().min(1).default(1),
+});
+
+/** Venue booking line (legacy items without itemType still work). */
+const legacyVenueOrderItemSchema = z
+	.object({
+		venueId: z.string(),
+		name: z.string(),
+		providerLabel: z.string(),
+		category: z.string(),
+		categoryLabel: z.string(),
+		image: z.string().optional().default(''),
+		guestCount: z.number().int().min(1),
+		price: z.number().min(0),
+		bookingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+		packageId: z.string().uuid().optional(),
+		serviceId: z.undefined().optional(),
+	})
+	.refine((i) => !i.serviceId, { message: 'serviceId not allowed on venue lines' });
+
+const orderItemSchema = z.union([serviceOrderItemSchema, venueOrderItemSchema, legacyVenueOrderItemSchema]);
+
+type OrderItemInput = z.infer<typeof orderItemSchema>;
+
+function isServiceLine(item: OrderItemInput): item is z.infer<typeof serviceOrderItemSchema> {
+	return 'itemType' in item && item.itemType === 'service';
+}
+
+async function resolveServiceOrderItem(
+	item: z.infer<typeof serviceOrderItemSchema>,
+): Promise<{ item: Record<string, unknown>; error?: string }> {
+	const { data: svc, error: svcErr } = await supabase
+		.from('provider_services')
+		.select('id, slug, name, kind, price_flat, status')
+		.eq('id', item.serviceId)
+		.eq('status', 'published')
+		.maybeSingle();
+
+	if (svcErr || !svc) {
+		return { item: { ...item }, error: 'Сонгосон үйлчилгээ олдсонгүй эсвэл идэвхгүй байна.' };
+	}
+
+	const linePrice = svc.price_flat * item.quantity;
+	const snapshot = buildServiceSnapshot(svc as Record<string, unknown>, item.quantity);
+
+	const line: Record<string, unknown> = {
+		...item,
+		itemType: 'service',
+		price: linePrice,
+		service_snapshot: snapshot,
+	};
+
+	return { item: line };
+}
+
+async function resolveVenueOrderItemWithPackage(
+	item: z.infer<typeof venueOrderItemSchema> | z.infer<typeof legacyVenueOrderItemSchema>,
+): Promise<{ item: Record<string, unknown>; error?: string }> {
+	const venueId = item.venueId;
+	const packageId = 'packageId' in item ? item.packageId : undefined;
+
+	if (!packageId) {
+		if (!z.string().uuid().safeParse(venueId).success) {
+			return { item: { ...item, itemType: 'venue' }, error: 'Байршлын ID буруу байна.' };
+		}
+		return { item: { ...item, itemType: 'venue' } };
+	}
+
+	if (!z.string().uuid().safeParse(venueId).success || !z.string().uuid().safeParse(packageId).success) {
+		return { item: { ...item, itemType: 'venue' }, error: 'Багц эсвэл байршлын ID буруу байна.' };
+	}
+
+	const { data: pkg, error: pkgErr } = await supabase
+		.from('venue_event_packages')
+		.select(
+			'id, venue_id, slug, name, short_description, price_flat, guests_min, guests_max, is_active, venue_package_services (kind, title, quantity, is_included, sort_order)',
+		)
+		.eq('id', packageId)
+		.eq('venue_id', venueId)
+		.eq('is_active', true)
+		.maybeSingle();
+
+	if (pkgErr || !pkg) {
+		return { item: { ...item, itemType: 'venue' }, error: 'Сонгосон багц олдсонгүй эсвэл идэвхгүй байна.' };
+	}
+
+	if (pkg.guests_min != null && item.guestCount < pkg.guests_min) {
+		return { item: { ...item, itemType: 'venue' }, error: `Зочдын тоо дор хаяж ${pkg.guests_min} байх ёстой.` };
+	}
+	if (pkg.guests_max != null && item.guestCount > pkg.guests_max) {
+		return { item: { ...item, itemType: 'venue' }, error: `Зочдын тоо ихдээ ${pkg.guests_max} байх ёстой.` };
+	}
+
+	const snapshot = buildPackageSnapshot(pkg as Record<string, unknown>);
+
+	const line: Record<string, unknown> = {
+		...item,
+		itemType: 'venue',
+		price: pkg.price_flat,
+		packageId: pkg.id,
+		package_slug: pkg.slug,
+		package_snapshot: snapshot,
+	};
+
+	return { item: line };
+}
+
+async function resolveOrderItem(item: OrderItemInput): Promise<{ item: Record<string, unknown>; error?: string }> {
+	if (isServiceLine(item)) {
+		return resolveServiceOrderItem(item);
+	}
+	return resolveVenueOrderItemWithPackage(item);
+}
 
 const createOrderSchema = z.object({
 	form: z.object({
@@ -53,7 +179,14 @@ ordersRouter.post('/make-order', authenticate, async (c) => {
 
 	const { form, items, subtotal, total } = parsed.data;
 
-	const recomputed = items.reduce((s, i) => s + i.price, 0);
+	const resolvedItems: Record<string, unknown>[] = [];
+	for (const raw of items) {
+		const { item, error: resolveErr } = await resolveOrderItem(raw);
+		if (resolveErr) return c.json({ error: resolveErr }, 400);
+		resolvedItems.push(item);
+	}
+
+	const recomputed = resolvedItems.reduce((s, i) => s + Number(i.price), 0);
 	if (recomputed !== subtotal || total !== subtotal) {
 		return c.json({ error: 'Дүн тохирохгүй байна. Сагсаа дахин ачаална уу.' }, 400);
 	}
@@ -67,7 +200,7 @@ ordersRouter.post('/make-order', authenticate, async (c) => {
 			customer_phone: form.phone.trim(),
 			payment_method: form.paymentMethod,
 			notes: form.notes?.trim() || null,
-			items,
+			items: resolvedItems,
 			subtotal,
 			total,
 			status: 'pending',
@@ -106,15 +239,15 @@ ordersRouter.get('/', authenticate, zValidator('query', orderListQuerySchema), a
 		return c.json({ error: 'Захиалгууд ачааллаагүй байна.' }, 500);
 	}
 
-	const total = count ?? 0;
+	const totalCount = count ?? 0;
 
 	return c.json({
 		data: data ?? [],
 		meta: {
-			total,
+			total: totalCount,
 			page,
 			limit,
-			totalPages: Math.ceil(total / limit),
+			totalPages: Math.ceil(totalCount / limit),
 		},
 	});
 });
