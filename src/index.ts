@@ -15,6 +15,7 @@ import { timeSlotsRouter } from './routes/time-slots.js';
 import { uploadsRouter } from './routes/uploads.js';
 import { servicesRouter } from './routes/services.js';
 import { venuesRouter } from './routes/venues.js';
+import { eventPlansRouter } from './routes/event-plans.js';
 import { wishlistRouter } from './routes/wishlist.js';
 
 const app = new Hono();
@@ -42,6 +43,7 @@ app.route('/uploads', uploadsRouter);
 app.route('/time-slots', timeSlotsRouter);
 app.route('/categories', categoriesRouter);
 app.route('/orders', ordersRouter);
+app.route('/event-plans', eventPlansRouter);
 app.route('/wishlist', wishlistRouter);
 app.route('/provider', providerRouter);
 app.route('/admin/orders', adminOrdersRouter);

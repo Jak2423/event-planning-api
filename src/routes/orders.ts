@@ -144,6 +144,24 @@ async function resolveOrderItem(item: OrderItemInput): Promise<{ item: Record<st
 	return resolveVenueOrderItemWithPackage(item);
 }
 
+/** Shared with event-plans checkout — validates lines and applies server pricing. */
+export async function resolveOrderLineItems(
+	rawItems: Record<string, unknown>[],
+): Promise<{ resolved: Record<string, unknown>[]; subtotal: number } | { error: string }> {
+	const resolved: Record<string, unknown>[] = [];
+	for (const raw of rawItems) {
+		const parsed = orderItemSchema.safeParse(raw);
+		if (!parsed.success) {
+			return { error: 'Мэдээлэл буруу байна. Формоо шалгана уу.' };
+		}
+		const { item, error: resolveErr } = await resolveOrderItem(parsed.data);
+		if (resolveErr) return { error: resolveErr };
+		resolved.push(item);
+	}
+	const subtotal = resolved.reduce((s, i) => s + Number(i.price), 0);
+	return { resolved, subtotal };
+}
+
 const createOrderSchema = z.object({
 	form: z.object({
 		fullName: z.string().min(1),
@@ -179,14 +197,10 @@ ordersRouter.post('/make-order', authenticate, async (c) => {
 
 	const { form, items, subtotal, total } = parsed.data;
 
-	const resolvedItems: Record<string, unknown>[] = [];
-	for (const raw of items) {
-		const { item, error: resolveErr } = await resolveOrderItem(raw);
-		if (resolveErr) return c.json({ error: resolveErr }, 400);
-		resolvedItems.push(item);
-	}
-
-	const recomputed = resolvedItems.reduce((s, i) => s + Number(i.price), 0);
+	const resolved = await resolveOrderLineItems(items as Record<string, unknown>[]);
+	if ('error' in resolved) return c.json({ error: resolved.error }, 400);
+	const resolvedItems = resolved.resolved;
+	const recomputed = resolved.subtotal;
 	if (recomputed !== subtotal || total !== subtotal) {
 		return c.json({ error: 'Дүн тохирохгүй байна. Сагсаа дахин ачаална уу.' }, 400);
 	}
