@@ -26,6 +26,9 @@ const serviceBodySchema = z.object({
   description: z.preprocess(emptyToUndef, z.string().trim().max(10000).optional()),
   price_flat: z.coerce.number().int().min(0),
   location: z.preprocess(emptyToUndef, z.string().trim().max(500).optional()),
+  contact_phone: z.preprocess(emptyToUndef, z.string().trim().max(50).optional()),
+  contact_email: z.preprocess(emptyToUndef, z.string().trim().email().optional()),
+  website: z.preprocess(emptyToUndef, z.string().trim().url().optional()),
   image_url: z.preprocess(emptyToUndef, z.string().trim().max(2000).optional()),
   images: z.array(z.string().trim().max(2000)).max(20).optional(),
   sort_order: z.coerce.number().int().optional().default(0),
@@ -51,6 +54,9 @@ const patchServiceBodySchema = serviceBodySchema.partial().refine(
     b.description !== undefined ||
     b.price_flat !== undefined ||
     b.location !== undefined ||
+    b.contact_phone !== undefined ||
+    b.contact_email !== undefined ||
+    b.website !== undefined ||
     b.image_url !== undefined ||
     b.images !== undefined ||
     b.sort_order !== undefined ||
@@ -75,7 +81,7 @@ const patchServiceStatusBodySchema = z.object({
 })
 
 const SERVICE_SELECT_PUBLIC =
-  "id, provider_id, slug, name, kind, short_description, price_flat, location, image_url, images, sort_order, created_at"
+  "id, provider_id, slug, name, kind, short_description, price_flat, location, contact_phone, contact_email, website, image_url, images, sort_order, created_at"
 
 const SERVICE_SELECT_DETAIL = SERVICE_SELECT_PUBLIC + ", description, status, updated_at"
 
@@ -118,7 +124,7 @@ servicesRouter.get("/", zValidator("query", listQuerySchema), async (c) => {
   let query = supabase
     .from("provider_services")
     .select(SERVICE_SELECT_PUBLIC, { count: "exact" })
-    .eq("status", "published")
+    .eq("status", "enabled")
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1)
@@ -177,10 +183,13 @@ servicesRouter.post("/", authenticate, requireProvider, zValidator("json", creat
     description: body.description ?? null,
     price_flat: body.price_flat,
     location: body.location ?? null,
+    contact_phone: body.contact_phone ?? null,
+    contact_email: body.contact_email ?? null,
+    website: body.website ?? null,
     image_url: body.image_url ?? null,
     images: body.images ?? [],
     sort_order: body.sort_order,
-    status: "draft" as const,
+    status: "enabled" as const,
     updated_at: new Date().toISOString(),
   }
 
@@ -305,6 +314,9 @@ servicesRouter.patch(
     if (body.description !== undefined) updates.description = body.description
     if (body.price_flat !== undefined) updates.price_flat = body.price_flat
     if (body.location !== undefined) updates.location = body.location
+    if (body.contact_phone !== undefined) updates.contact_phone = body.contact_phone
+    if (body.contact_email !== undefined) updates.contact_email = body.contact_email
+    if (body.website !== undefined) updates.website = body.website === "" ? null : body.website
     if (body.image_url !== undefined) updates.image_url = body.image_url
     if (body.images !== undefined) updates.images = body.images
     if (body.sort_order !== undefined) updates.sort_order = body.sort_order
@@ -330,7 +342,7 @@ servicesRouter.get("/:slug", async (c) => {
     .from("provider_services")
     .select(SERVICE_SELECT_PUBLIC + ", description")
     .eq("slug", slug)
-    .eq("status", "published")
+    .eq("status", "enabled")
     .maybeSingle()
 
   if (error) return c.json({ error: error.message }, 500)

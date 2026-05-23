@@ -71,6 +71,8 @@ type PackageSvc = {
 	provider_services?: Record<string, unknown> | null;
 };
 
+const emptyToUndef = (v: unknown) => (v === '' || v === null ? undefined : v);
+
 const packageServiceSchema = z
 	.object({
 		provider_service_id: z.string().uuid().optional(),
@@ -196,11 +198,13 @@ export const createPackageBodySchema = z.object({
 	),
 	name: z.string().trim().min(2),
 	short_description: z.preprocess((v) => (v === '' ? undefined : v), z.string().trim().max(1000).optional()),
-	price_flat: z.coerce.number().int().min(0),
+	price_per_person: z.coerce.number().int().min(0),
 	guests_min: z.union([z.coerce.number().int().min(1), z.literal(null)]).optional(),
 	guests_max: z.union([z.coerce.number().int().min(1), z.literal(null)]).optional(),
 	is_active: z.boolean().optional().default(true),
 	sort_order: z.coerce.number().int().optional().default(0),
+	image_url: z.preprocess(emptyToUndef, z.string().trim().max(2000).optional()),
+	images: z.array(z.string().trim().max(2000)).max(20).optional(),
 	services: z.array(packageServiceSchema).optional().default([]),
 });
 
@@ -215,11 +219,13 @@ const patchPackageBodySchema = z
 			.optional(),
 		name: z.string().trim().min(2).optional(),
 		short_description: z.union([z.string().trim().max(1000), z.literal(null)]).optional(),
-		price_flat: z.coerce.number().int().min(0).optional(),
+		price_per_person: z.coerce.number().int().min(0).optional(),
 		guests_min: z.union([z.coerce.number().int().min(1), z.literal(null)]).optional(),
 		guests_max: z.union([z.coerce.number().int().min(1), z.literal(null)]).optional(),
 		is_active: z.boolean().optional(),
 		sort_order: z.coerce.number().int().optional(),
+		image_url: z.preprocess(emptyToUndef, z.string().trim().max(2000).optional()),
+		images: z.array(z.string().trim().max(2000)).max(20).optional(),
 		services: z.array(packageServiceSchema).optional(),
 	})
 	.refine(
@@ -227,17 +233,19 @@ const patchPackageBodySchema = z
 			body.slug !== undefined ||
 			body.name !== undefined ||
 			body.short_description !== undefined ||
-			body.price_flat !== undefined ||
+			body.price_per_person !== undefined ||
 			body.guests_min !== undefined ||
 			body.guests_max !== undefined ||
 			body.is_active !== undefined ||
 			body.sort_order !== undefined ||
+			body.image_url !== undefined ||
+			body.images !== undefined ||
 			body.services !== undefined,
 		{ message: 'Шинэчлэх талбар оруулна уу' },
 	);
 
 const PACKAGE_SELECT_PUBLIC =
-	'id, venue_id, slug, name, short_description, price_flat, guests_min, guests_max, sort_order';
+	'id, venue_id, slug, name, short_description, price_per_person, guests_min, guests_max, sort_order, image_url, images';
 const PACKAGE_SELECT_DETAIL = PACKAGE_SELECT_PUBLIC + ', is_active, created_at, updated_at';
 
 export type CreatePackageBody = z.infer<typeof createPackageBodySchema>;
@@ -258,11 +266,13 @@ export async function updateVenuePackageRecord(
 	const updates: Record<string, unknown> = {
 		name: body.name.trim(),
 		short_description: body.short_description?.trim() ?? null,
-		price_flat: body.price_flat,
+		price_per_person: body.price_per_person,
 		guests_min: body.guests_min === null ? null : body.guests_min,
 		guests_max: body.guests_max === null ? null : body.guests_max,
 		is_active: body.is_active,
 		sort_order: body.sort_order,
+		image_url: body.image_url ?? null,
+		images: body.images ?? [],
 		updated_at: new Date().toISOString(),
 	};
 	if (body.slug != null && body.slug.trim().length > 0) {
@@ -371,11 +381,13 @@ export async function persistVenuePackage(
 		slug,
 		name: body.name.trim(),
 		short_description: body.short_description?.trim() ?? null,
-		price_flat: body.price_flat,
+		price_per_person: body.price_per_person,
 		guests_min: body.guests_min === null ? null : body.guests_min,
 		guests_max: body.guests_max === null ? null : body.guests_max,
 		is_active: body.is_active,
 		sort_order: body.sort_order,
+		image_url: body.image_url ?? null,
+		images: body.images ?? [],
 		updated_at: new Date().toISOString(),
 	};
 
@@ -489,7 +501,7 @@ venuePackagesRouter.get('/:id/event-packages', async (c) => {
 		.from('venues')
 		.select('id')
 		.eq('id', vid)
-		.eq('status', 'published')
+		.eq('status', 'enabled')
 		.maybeSingle();
 	if (!venue) return c.json({ error: 'Venue not found' }, 404);
 
@@ -548,9 +560,9 @@ venuePackagesRouter.patch(
 			didPackageUpdate = true;
 			updates.short_description = body.short_description;
 		}
-		if (body.price_flat !== undefined) {
+		if (body.price_per_person !== undefined) {
 			didPackageUpdate = true;
-			updates.price_flat = body.price_flat;
+			updates.price_per_person = body.price_per_person;
 		}
 		if (body.guests_min !== undefined) {
 			didPackageUpdate = true;
@@ -567,6 +579,14 @@ venuePackagesRouter.patch(
 		if (body.sort_order !== undefined) {
 			didPackageUpdate = true;
 			updates.sort_order = body.sort_order;
+		}
+		if (body.image_url !== undefined) {
+			didPackageUpdate = true;
+			updates.image_url = body.image_url ?? null;
+		}
+		if (body.images !== undefined) {
+			didPackageUpdate = true;
+			updates.images = body.images;
 		}
 
 		if (didPackageUpdate) {
@@ -629,15 +649,19 @@ venuePackagesRouter.delete(
 	},
 );
 
-export function buildPackageSnapshot(pkg: Record<string, unknown>): Record<string, unknown> {
+export function buildPackageSnapshot(pkg: Record<string, unknown>, guestCount?: number): Record<string, unknown> {
 	const raw = pkg.venue_package_services as PackageSvc[] | undefined;
 	const services = Array.isArray(raw)
 		? [...raw].sort((a, b) => Number(a.sort_order) - Number(b.sort_order))
 		: [];
+	const pricePerPerson = Number(pkg.price_per_person) || 0;
+	const guests = guestCount != null ? Math.max(1, Math.floor(guestCount)) : null;
 	return {
 		package_name: pkg.name,
 		package_slug: pkg.slug,
-		price_flat: pkg.price_flat,
+		price_per_person: pricePerPerson,
+		image_url: (pkg.image_url as string) ?? null,
+		...(guests != null ? { guest_count: guests, line_total: pricePerPerson * guests } : {}),
 		services_included: services
 			.filter((s) => s.is_included !== false)
 			.map((s) => {

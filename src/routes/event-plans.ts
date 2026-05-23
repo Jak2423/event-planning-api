@@ -195,7 +195,7 @@ eventPlansRouter.put('/:id/venue', zValidator('param', planIdParam), zValidator(
 		.from('venues')
 		.select('id, status')
 		.eq('id', body.venue_id)
-		.eq('status', 'published')
+		.eq('status', 'enabled')
 		.maybeSingle();
 	if (!venue) return c.json({ error: 'Байршил олдсонгүй эсвэл идэвхгүй байна' }, 400);
 
@@ -277,7 +277,7 @@ eventPlansRouter.post(
 			.from('provider_services')
 			.select('id')
 			.eq('id', body.provider_service_id)
-			.eq('status', 'published')
+			.eq('status', 'enabled')
 			.maybeSingle();
 		if (!svc) return c.json({ error: 'Үйлчилгээ олдсонгүй эсвэл идэвхгүй байна' }, 400);
 
@@ -366,7 +366,7 @@ eventPlansRouter.post(
 		if (summary.venue) {
 			const { data: venue } = await supabase
 				.from('venues')
-				.select('id, name, slug, image_url, price_per_person, categories(slug, name)')
+				.select('id, name, slug, image_url, price_flat, categories(slug, name)')
 				.eq('id', summary.venue.venue_id)
 				.single();
 
