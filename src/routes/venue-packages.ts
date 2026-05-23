@@ -6,7 +6,6 @@ import { assertProviderAccess, authenticate, requireProvider } from '../middlewa
 import { supabase } from '../lib/supabase.js';
 import type { AuthUser } from '../types/index.js';
 
-/** Aligns with provider_services.kind + legacy manual kinds (food, staff). */
 const PACKAGE_SERVICE_KINDS = [
 	'food',
 	'cake',
@@ -74,7 +73,6 @@ type PackageSvc = {
 
 const packageServiceSchema = z
 	.object({
-		/** Link to provider_services — fills kind/title from catalog when omitted. */
 		provider_service_id: z.string().uuid().optional(),
 		kind: z.enum(PACKAGE_SERVICE_KINDS).optional(),
 		title: z.string().trim().min(1).optional(),
@@ -125,7 +123,6 @@ async function getVenueProviderId(venueId: string): Promise<string | null> {
 	return data?.provider_id ?? null;
 }
 
-/** Resolve manual lines or provider_services links for bundle included items. */
 export async function resolvePackageServiceLines(
 	venueId: string,
 	packageId: string,
@@ -245,14 +242,12 @@ const PACKAGE_SELECT_DETAIL = PACKAGE_SELECT_PUBLIC + ', is_active, created_at, 
 
 export type CreatePackageBody = z.infer<typeof createPackageBodySchema>;
 
-/** `id` present = update; omit = create. Sent on PATCH /venues/:id as `event_packages` (full replace). */
 export const upsertEventPackageInputSchema = createPackageBodySchema.extend({
 	id: z.string().uuid().optional(),
 });
 
 export type UpsertEventPackageInput = z.infer<typeof upsertEventPackageInputSchema>;
 
-/** Update one package (+ replace services). Used by syncVenueEventPackages. */
 export async function updateVenuePackageRecord(
 	packageId: string,
 	body: CreatePackageBody,
@@ -309,10 +304,6 @@ export async function updateVenuePackageRecord(
 	return { ok: true, data: full as Record<string, unknown> };
 }
 
-/**
- * Replace venue bundles: update/create items in the array; delete packages on the venue not listed.
- * POST /venues and PATCH /venues/:id use this.
- */
 export async function syncVenueEventPackages(
 	venueId: string,
 	packages: UpsertEventPackageInput[],
@@ -363,7 +354,6 @@ export async function syncVenueEventPackages(
 	return { ok: true, data: results };
 }
 
-/** Create one venue package (+ services). POST /venues/:id/event-packages and bundled venue POST use this. */
 export async function persistVenuePackage(
 	venueId: string,
 	body: CreatePackageBody,
@@ -437,7 +427,6 @@ export async function persistVenuePackage(
 
 export const venuePackagesRouter = new Hono();
 
-/** Provider/admin — list all packages incl. inactive (venue UUID first segment under /venues merge). Register before public GET below. */
 venuePackagesRouter.get(
 	'/:id/event-packages/manage',
 	authenticate,
@@ -491,7 +480,6 @@ venuePackagesRouter.post(
 	},
 );
 
-/** Public catalog — flat `price_flat` total per package. */
 venuePackagesRouter.get('/:id/event-packages', async (c) => {
 	const vid = c.req.param('id');
 	if (!z.string().uuid().safeParse(vid).success) {

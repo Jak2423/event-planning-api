@@ -1,7 +1,3 @@
-/**
- * Seed provider_services for a provider.
- * Usage: node scripts/seed-provider-services.mjs [providerId]
- */
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 

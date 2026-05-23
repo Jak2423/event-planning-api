@@ -182,7 +182,6 @@ eventPlansRouter.delete('/:id', zValidator('param', planIdParam), async (c) => {
 	return c.json({ data: { deleted: true, id } });
 });
 
-/** Choose venue (and optional package) for the plan. */
 eventPlansRouter.put('/:id/venue', zValidator('param', planIdParam), zValidator('json', setVenueSchema), async (c) => {
 	const { id } = c.req.valid('param');
 	const user = c.var.user;
@@ -344,7 +343,6 @@ eventPlansRouter.delete('/:id/services/:lineId', zValidator('param', lineIdParam
 	return c.json({ data: await planResponse(updated!) });
 });
 
-/** Convert plan → order (same rules as POST /orders/make-order). */
 eventPlansRouter.post(
 	'/:id/checkout',
 	zValidator('param', planIdParam),

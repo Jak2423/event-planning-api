@@ -4,7 +4,6 @@ import type { AuthUser } from "../types/index.js"
 export const VENUE_STATUSES = ["draft", "published", "archived"] as const
 export type VenueStatus = (typeof VENUE_STATUSES)[number]
 
-/** Provider owns venue, or caller is admin. */
 export async function assertVenueOwnerOrAdmin(
   user: AuthUser,
   venueId: string,

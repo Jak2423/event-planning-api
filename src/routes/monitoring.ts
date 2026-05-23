@@ -47,7 +47,6 @@ monitoringRouter.post(
 	},
 );
 
-/** All routes below require Authorization: Bearer <superadmin JWT> */
 const guarded = new Hono();
 guarded.use('*', requireSuperadminToken);
 

@@ -33,7 +33,6 @@ const serviceOrderItemSchema = z.object({
 	quantity: z.coerce.number().int().min(1).default(1),
 });
 
-/** Venue booking line (legacy items without itemType still work). */
 const legacyVenueOrderItemSchema = z
 	.object({
 		venueId: z.string(),
@@ -144,7 +143,6 @@ async function resolveOrderItem(item: OrderItemInput): Promise<{ item: Record<st
 	return resolveVenueOrderItemWithPackage(item);
 }
 
-/** Shared with event-plans checkout — validates lines and applies server pricing. */
 export async function resolveOrderLineItems(
 	rawItems: Record<string, unknown>[],
 ): Promise<{ resolved: Record<string, unknown>[]; subtotal: number } | { error: string }> {

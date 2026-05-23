@@ -82,7 +82,6 @@ const venueWritableBodySchema = z.object({
 
 const createVenueBodySchema = venueWritableBodySchema
   .extend({
-    /** Optional bundles; created after venue row (rollback venue if any package fails). */
     event_packages: z.array(createPackageBodySchema).max(30).optional(),
   })
   .refine((data) => data.capacity_max >= data.capacity_min, {
@@ -130,7 +129,6 @@ const patchVenueBodySchema = venueWritableBodySchema
   .partial()
   .omit({ category_id: true })
   .extend({
-    /** Full bundle list for this venue: update by `id`, create without `id`, remove omitted packages. */
     event_packages: z.array(upsertEventPackageInputSchema).max(30).optional(),
   })
   .superRefine((val, ctx) => {
@@ -396,7 +394,6 @@ venuesRouter.post("/:id/reviews", authenticate, zValidator("json", createReviewB
   return c.json({ data }, 201)
 })
 
-/** Provider/admin — full venue by UUID (any status). */
 venuesRouter.get(
   "/:id/manage",
   authenticate,

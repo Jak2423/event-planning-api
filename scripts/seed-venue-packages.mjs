@@ -1,7 +1,3 @@
-/**
- * One-off seed: event packages for a venue.
- * Usage: node scripts/seed-venue-packages.mjs [venueId]
- */
 import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 

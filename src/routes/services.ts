@@ -107,7 +107,6 @@ const generateUniqueServiceSlug = async (baseName: string): Promise<string> => {
   return `${base}-${randomUUID().replace(/-/g, "").slice(0, 12)}`
 }
 
-/** Public catalog — published only. */
 servicesRouter.get("/", zValidator("query", listQuerySchema), async (c) => {
   const { kind, provider_id, search, page, limit } = c.req.valid("query")
   const offset = (page - 1) * limit
@@ -146,7 +145,6 @@ servicesRouter.get("/", zValidator("query", listQuerySchema), async (c) => {
   })
 })
 
-/** Provider — all own services (any status). */
 servicesRouter.get("/manage", authenticate, requireProvider, async (c) => {
   const user = c.var.user
 
@@ -325,7 +323,6 @@ servicesRouter.patch(
   },
 )
 
-/** Public detail by slug — published only. */
 servicesRouter.get("/:slug", async (c) => {
   const slug = c.req.param("slug")
 

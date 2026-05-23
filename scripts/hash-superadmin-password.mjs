@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-/** Generate SUPERADMIN_PASSWORD_BCRYPT — run: node scripts/hash-superadmin-password.mjs "your-strong-password" */
 import bcrypt from 'bcryptjs';
 
 const plain = process.argv[2];
