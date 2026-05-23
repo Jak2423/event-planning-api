@@ -10,6 +10,11 @@ import {
   serviceAccessErrorResponse,
 } from "../lib/service-access.js"
 import {
+  attachOptionGroupsToService,
+  serviceOptionGroupInputSchema,
+  syncServiceOptionGroups,
+} from "../lib/service-options.js"
+import {
   assertScopedProviderVenueAccess,
   authenticate,
   requireProvider,
@@ -44,9 +49,13 @@ const serviceBodySchema = z.object({
   ),
 })
 
-const createServiceBodySchema = serviceBodySchema
+const createServiceBodySchema = serviceBodySchema.extend({
+  option_groups: z.array(serviceOptionGroupInputSchema).max(20).optional(),
+})
 
-const patchServiceBodySchema = serviceBodySchema.partial().refine(
+const patchServiceBodySchema = serviceBodySchema.partial().extend({
+  option_groups: z.array(serviceOptionGroupInputSchema).max(20).optional(),
+}).refine(
   (b) =>
     b.name !== undefined ||
     b.kind !== undefined ||
@@ -60,7 +69,8 @@ const patchServiceBodySchema = serviceBodySchema.partial().refine(
     b.image_url !== undefined ||
     b.images !== undefined ||
     b.sort_order !== undefined ||
-    b.slug !== undefined,
+    b.slug !== undefined ||
+    b.option_groups !== undefined,
   { message: "Шинэчлэх талбар оруулна уу" },
 )
 
@@ -140,8 +150,12 @@ servicesRouter.get("/", zValidator("query", listQuerySchema), async (c) => {
   const { data, error, count } = await query
   if (error) return c.json({ error: error.message }, 500)
 
+  const withOptions = await Promise.all(
+    (data ?? []).map((s) => attachOptionGroupsToService(s as unknown as Record<string, unknown>, true)),
+  )
+
   return c.json({
-    data: data ?? [],
+    data: withOptions,
     meta: {
       total: count ?? 0,
       page,
@@ -162,7 +176,10 @@ servicesRouter.get("/manage", authenticate, requireProvider, async (c) => {
     .order("created_at", { ascending: false })
 
   if (error) return c.json({ error: error.message }, 500)
-  return c.json({ data: data ?? [] })
+  const withOptions = await Promise.all(
+    (data ?? []).map((s) => attachOptionGroupsToService(s as unknown as Record<string, unknown>)),
+  )
+  return c.json({ data: withOptions })
 })
 
 servicesRouter.post("/", authenticate, requireProvider, zValidator("json", createServiceBodySchema), async (c) => {
@@ -195,12 +212,23 @@ servicesRouter.post("/", authenticate, requireProvider, zValidator("json", creat
 
   const { data, error } = await supabase.from("provider_services").insert(row).select(SERVICE_SELECT_DETAIL).single()
 
-  if (error) {
-    if (error.code === "23505") return c.json({ error: "Slug already exists" }, 409)
-    return c.json({ error: error.message }, 400)
+  if (error || !data || typeof data !== "object" || !("id" in data)) {
+    if (error?.code === "23505") return c.json({ error: "Slug already exists" }, 409)
+    return c.json({ error: error?.message ?? "Insert failed" }, 400)
   }
 
-  return c.json({ data }, 201)
+  const serviceId = String((data as { id: string }).id)
+
+  if (body.option_groups?.length) {
+    const synced = await syncServiceOptionGroups(serviceId, body.option_groups)
+    if (!synced.ok) {
+      await supabase.from("provider_services").delete().eq("id", serviceId)
+      return c.json({ error: synced.error }, synced.statusCode)
+    }
+  }
+
+  const full = await attachOptionGroupsToService(data as unknown as Record<string, unknown>)
+  return c.json({ data: full }, 201)
 })
 
 servicesRouter.get(
@@ -227,7 +255,8 @@ servicesRouter.get(
 
     if (error) return c.json({ error: error.message }, 500)
     if (!data) return c.json({ error: "Service not found" }, 404)
-    return c.json({ data })
+    const full = await attachOptionGroupsToService(data as unknown as Record<string, unknown>)
+    return c.json({ data: full })
   },
 )
 
@@ -331,7 +360,14 @@ servicesRouter.patch(
       return c.json({ error: error.message }, 400)
     }
     if (!data) return c.json({ error: "Service not found or unauthorized" }, 404)
-    return c.json({ data })
+
+    if (body.option_groups !== undefined) {
+      const synced = await syncServiceOptionGroups(id, body.option_groups)
+      if (!synced.ok) return c.json({ error: synced.error }, synced.statusCode)
+    }
+
+    const full = await attachOptionGroupsToService(data as unknown as Record<string, unknown>)
+    return c.json({ data: full })
   },
 )
 
@@ -347,15 +383,25 @@ servicesRouter.get("/:slug", async (c) => {
 
   if (error) return c.json({ error: error.message }, 500)
   if (!data) return c.json({ error: "Service not found" }, 404)
-  return c.json({ data })
+  const full = await attachOptionGroupsToService(data as unknown as Record<string, unknown>, true)
+  return c.json({ data: full })
 })
 
-export function buildServiceSnapshot(svc: Record<string, unknown>, quantity: number): Record<string, unknown> {
+export function buildServiceSnapshot(
+  svc: Record<string, unknown>,
+  quantity: number,
+  selections: Record<string, unknown>[] = [],
+  unitPrice?: number,
+): Record<string, unknown> {
+  const base = Number(svc.price_flat) || 0
+  const unit = unitPrice ?? base
   return {
     service_name: svc.name,
     service_slug: svc.slug,
     kind: svc.kind,
-    price_flat: svc.price_flat,
+    price_flat: base,
+    unit_price: unit,
     quantity,
+    selected_options: selections,
   }
 }

@@ -1,5 +1,10 @@
 import { supabase } from './supabase.js';
 import { venueOnlyOrderPrice, venuePackageOrderPrice } from './venue-pricing.js';
+import {
+	computeServiceUnitPrice,
+	resolveServiceOptionSelections,
+	type ResolvedServiceOption,
+} from './service-options.js';
 
 export type EventPlanRow = {
 	id: string;
@@ -40,6 +45,11 @@ export type PlanServiceLine = {
 	quantity: number;
 	sort_order: number;
 	estimated_price: number;
+	unit_price: number;
+	selected_option_ids: string[];
+	selected_options: ResolvedServiceOption[];
+	has_option_groups: boolean;
+	options_complete: boolean;
 	service: {
 		id: string;
 		slug: string;
@@ -133,7 +143,7 @@ export async function buildEventPlanSummary(plan: EventPlanRow): Promise<EventPl
 	const { data: lines } = await supabase
 		.from('event_plan_services')
 		.select(
-			'id, provider_service_id, quantity, sort_order, provider_services (id, slug, name, kind, price_flat, provider_id, image_url, status)',
+			'id, provider_service_id, quantity, sort_order, selected_option_ids, provider_services (id, slug, name, kind, price_flat, provider_id, image_url, status)',
 		)
 		.eq('plan_id', plan.id)
 		.order('sort_order', { ascending: true });
@@ -145,18 +155,40 @@ export async function buildEventPlanSummary(plan: EventPlanRow): Promise<EventPl
 		if (!svc || svc.status !== 'enabled') continue;
 		providerIds.add(String(svc.provider_id));
 		const qty = Number(row.quantity) || 1;
+		const basePrice = Number(svc.price_flat);
+		const selectedOptionIds = Array.isArray(row.selected_option_ids)
+			? row.selected_option_ids.map(String)
+			: [];
+		const resolved = await resolveServiceOptionSelections(String(svc.id), selectedOptionIds);
+		const hasOptionGroups = resolved.ok && resolved.hasOptionGroups;
+		const selections = resolved.ok ? resolved.selections : [];
+		const unitPrice = resolved.ok
+			? computeServiceUnitPrice(
+					basePrice,
+					resolved.optionsPriceSum,
+					resolved.hasOptionGroups,
+					resolved.selections.length > 0,
+				)
+			: basePrice;
+		const optionsComplete = !hasOptionGroups || (selectedOptionIds.length > 0 && resolved.ok);
+
 		services.push({
 			id: row.id,
 			provider_service_id: row.provider_service_id,
 			quantity: qty,
 			sort_order: row.sort_order,
-			estimated_price: Number(svc.price_flat) * qty,
+			estimated_price: unitPrice * qty,
+			unit_price: unitPrice,
+			selected_option_ids: selectedOptionIds,
+			selected_options: selections,
+			has_option_groups: hasOptionGroups,
+			options_complete: optionsComplete,
 			service: {
 				id: String(svc.id),
 				slug: String(svc.slug),
 				name: String(svc.name),
 				kind: String(svc.kind),
-				price_flat: Number(svc.price_flat),
+				price_flat: basePrice,
 				provider_id: String(svc.provider_id),
 				image_url: (svc.image_url as string) ?? null,
 			},

@@ -5,6 +5,10 @@ import { supabase } from '../lib/supabase.js';
 import { authenticate } from '../middleware/auth.js';
 import { buildPackageSnapshot } from './venue-packages.js';
 import { buildServiceSnapshot } from './services.js';
+import {
+	computeServiceUnitPrice,
+	resolveServiceOptionSelections,
+} from '../lib/service-options.js';
 import { venueOnlyOrderPrice, venuePackageOrderPrice } from '../lib/venue-pricing.js';
 
 export const ordersRouter = new Hono();
@@ -32,6 +36,7 @@ const serviceOrderItemSchema = z.object({
 	serviceId: z.string().uuid(),
 	...orderLineDisplaySchema,
 	quantity: z.coerce.number().int().min(1).default(1),
+	selected_options: z.array(z.string().uuid()).optional().default([]),
 });
 
 const legacyVenueOrderItemSchema = z
@@ -72,13 +77,31 @@ async function resolveServiceOrderItem(
 		return { item: { ...item }, error: 'Сонгосон үйлчилгээ олдсонгүй эсвэл идэвхгүй байна.' };
 	}
 
-	const linePrice = svc.price_flat * item.quantity;
-	const snapshot = buildServiceSnapshot(svc as Record<string, unknown>, item.quantity);
+	const selectedOptionIds = item.selected_options ?? [];
+	const resolvedOptions = await resolveServiceOptionSelections(item.serviceId, selectedOptionIds);
+	if (!resolvedOptions.ok) {
+		return { item: { ...item }, error: resolvedOptions.error };
+	}
+
+	const unitPrice = computeServiceUnitPrice(
+		Number(svc.price_flat),
+		resolvedOptions.optionsPriceSum,
+		resolvedOptions.hasOptionGroups,
+		resolvedOptions.selections.length > 0,
+	);
+	const linePrice = unitPrice * item.quantity;
+	const snapshot = buildServiceSnapshot(
+		svc as Record<string, unknown>,
+		item.quantity,
+		resolvedOptions.selections,
+		unitPrice,
+	);
 
 	const line: Record<string, unknown> = {
 		...item,
 		itemType: 'service',
 		price: linePrice,
+		selected_options: selectedOptionIds,
 		service_snapshot: snapshot,
 	};
 
