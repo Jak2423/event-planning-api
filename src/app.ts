@@ -1,6 +1,5 @@
-import type { Context } from 'hono';
+import type { Context, MiddlewareHandler } from 'hono';
 import { Hono } from 'hono';
-import { cors } from 'hono/cors';
 import { HTTPException } from 'hono/http-exception';
 import { logger } from 'hono/logger';
 
@@ -17,35 +16,53 @@ import { uploadsRouter } from './routes/uploads.js';
 import { venuesRouter } from './routes/venues.js';
 import { wishlistRouter } from './routes/wishlist.js';
 
-/** Reflect request Origin so credentials work (cannot use * with credentials). */
+const CORS_ALLOW_HEADERS =
+	'Authorization, Content-Type, Accept, Origin, X-Requested-With, X-CSRF-Token';
+const CORS_ALLOW_METHODS = 'GET, POST, PATCH, PUT, DELETE, OPTIONS';
+
 export const resolveAllowOrigin = (origin: string | undefined): string => origin ?? '*';
 
-export const applyCorsToResponse = (c: Context, res: Response): Response => {
-	const allowOrigin = resolveAllowOrigin(c.req.header('origin'));
-	res.headers.set('Access-Control-Allow-Origin', allowOrigin);
+export const corsHeadersFor = (origin: string | undefined): Headers => {
+	const headers = new Headers();
+	const allowOrigin = resolveAllowOrigin(origin);
+	headers.set('Access-Control-Allow-Origin', allowOrigin);
 	if (allowOrigin !== '*') {
-		res.headers.set('Access-Control-Allow-Credentials', 'true');
-		res.headers.append('Vary', 'Origin');
+		headers.set('Access-Control-Allow-Credentials', 'true');
 	}
-	return res;
+	headers.set('Access-Control-Allow-Methods', CORS_ALLOW_METHODS);
+	headers.set('Access-Control-Allow-Headers', CORS_ALLOW_HEADERS);
+	headers.set('Access-Control-Max-Age', '86400');
+	headers.append('Vary', 'Origin');
+	return headers;
+};
+
+export const applyCorsToResponse = (c: Context, res: Response): Response => {
+	const merged = new Headers(res.headers);
+	for (const [key, value] of corsHeadersFor(c.req.header('origin'))) {
+		merged.set(key, value);
+	}
+	return new Response(res.body, { status: res.status, statusText: res.statusText, headers: merged });
+};
+
+const corsMiddleware: MiddlewareHandler = async (c, next) => {
+	const origin = c.req.header('origin');
+
+	if (c.req.method === 'OPTIONS') {
+		return new Response(null, { status: 204, headers: corsHeadersFor(origin) });
+	}
+
+	await next();
+
+	for (const [key, value] of corsHeadersFor(origin)) {
+		c.res.headers.set(key, value);
+	}
 };
 
 export const createApp = () => {
 	const app = new Hono();
 
 	app.use(logger());
-
-	app.use(
-		'*',
-		cors({
-			origin: (origin) => resolveAllowOrigin(origin),
-			allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-			allowHeaders: ['Authorization', 'Content-Type', 'Accept', 'Origin', 'X-Requested-With'],
-			exposeHeaders: ['Content-Length'],
-			credentials: true,
-			maxAge: 86_400,
-		}),
-	);
+	app.use('*', corsMiddleware);
 
 	app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
