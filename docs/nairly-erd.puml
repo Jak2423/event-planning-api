@@ -1,0 +1,234 @@
+@startuml nairly-erd
+' Nairly PostgreSQL ERD
+' Render: plantuml docs/nairly-erd.puml
+
+hide circle
+skinparam shadowing false
+skinparam linetype ortho
+skinparam roundcorner 8
+skinparam entity {
+  BackgroundColor white
+  BorderColor black
+  FontName "Times New Roman"
+  FontSize 10
+}
+skinparam defaultFontName "Times New Roman"
+
+title Nairly — Entity Relationship Diagram
+
+entity "users\n(auth.users)" as users {
+  * **id** : uuid <<PK>>
+  --
+  email : text
+  app_metadata : jsonb
+}
+
+entity "profiles" as profiles {
+  * **id** : uuid <<PK, FK>>
+  --
+  user_type : text
+  full_name : text
+  phone : text
+}
+
+entity "categories" as categories {
+  * **id** : uuid <<PK>>
+  --
+  slug : text <<UK>>
+  name : text
+  sort_order : int
+}
+
+entity "venues" as venues {
+  * **id** : uuid <<PK>>
+  --
+  * provider_id : uuid <<FK>>
+  * category_id : uuid <<FK>>
+  slug : text
+  name : text
+  location : text
+  price_flat : int
+  capacity_min : int
+  capacity_max : int
+  status : enabled | disabled
+  image_url : text
+  rating : numeric
+}
+
+entity "venue_time_slots" as venue_time_slots {
+  * **id** : uuid <<PK>>
+  --
+  * venue_id : uuid <<FK>>
+  day_of_week : int
+  regular_price : int
+  sale_price : int
+  is_on_sale : bool
+}
+
+entity "venue_event_packages" as venue_event_packages {
+  * **id** : uuid <<PK>>
+  --
+  * venue_id : uuid <<FK>>
+  slug : text
+  name : text
+  price_per_person : int
+  guests_min : int
+  guests_max : int
+  image_url : text
+  is_active : bool
+}
+
+entity "venue_package_services" as venue_package_services {
+  * **id** : uuid <<PK>>
+  --
+  * package_id : uuid <<FK>>
+  provider_service_id : uuid <<FK?>>
+  kind : text
+  title : text
+  quantity : int
+  is_included : bool
+  sort_order : int
+}
+
+entity "venue_reviews" as venue_reviews {
+  * **id** : uuid <<PK>>
+  --
+  * venue_id : uuid <<FK>>
+  * user_id : uuid <<FK>>
+  rating : int
+  comment : text
+}
+
+entity "venue_wishlists" as venue_wishlists {
+  * **id** : uuid <<PK>>
+  --
+  * user_id : uuid <<FK>>
+  * venue_id : uuid <<FK>>
+  created_at : timestamptz
+}
+
+entity "provider_services" as provider_services {
+  * **id** : uuid <<PK>>
+  --
+  * provider_id : uuid <<FK>>
+  slug : text <<UK>>
+  name : text
+  kind : service_kind
+  price_flat : int
+  status : enabled | disabled
+  contact_phone : text
+  contact_email : text
+  website : text
+  image_url : text
+}
+
+entity "provider_service_option_groups" as option_groups {
+  * **id** : uuid <<PK>>
+  --
+  * service_id : uuid <<FK>>
+  title : text
+  is_required : bool
+  max_choices : int
+  sort_order : int
+}
+
+entity "provider_service_options" as options {
+  * **id** : uuid <<PK>>
+  --
+  * group_id : uuid <<FK>>
+  label : text
+  price_adjustment : int
+  image_url : text
+  is_active : bool
+  sort_order : int
+}
+
+entity "event_plans" as event_plans {
+  * **id** : uuid <<PK>>
+  --
+  * user_id : uuid <<FK>>
+  venue_id : uuid <<FK?>>
+  venue_package_id : uuid <<FK?>>
+  name : text
+  budget : int
+  event_date : date
+  guest_count : int
+  venue_booking_date : date
+  status : draft | archived
+}
+
+entity "event_plan_services" as event_plan_services {
+  * **id** : uuid <<PK>>
+  --
+  * plan_id : uuid <<FK>>
+  * provider_service_id : uuid <<FK>>
+  quantity : int
+  sort_order : int
+  selected_option_ids : uuid[]
+}
+
+entity "orders" as orders {
+  * **id** : uuid <<PK>>
+  --
+  * user_id : uuid <<FK>>
+  customer_name : text
+  customer_email : text
+  customer_phone : text
+  payment_method : text
+  items : jsonb
+  subtotal : int
+  total : int
+  status : pending | paid | cancelled
+}
+
+entity "venue_booked_dates" as venue_booked_dates {
+  * **id** : uuid <<PK>>
+  --
+  * order_id : uuid <<FK>>
+  * venue_id : uuid <<FK>>
+  booking_date : date
+}
+
+' ── Relationships ──
+
+users ||--o| profiles : has
+users ||--o{ venues : owns
+users ||--o{ provider_services : provides
+users ||--o{ event_plans : creates
+users ||--o{ orders : places
+users ||--o{ venue_wishlists : saves
+users ||--o{ venue_reviews : writes
+
+categories ||--o{ venues : classifies
+
+venues ||--o{ venue_time_slots : has
+venues ||--o{ venue_event_packages : has
+venues ||--o{ venue_wishlists : listed_in
+venues ||--o{ venue_reviews : receives
+venues ||--o{ venue_booked_dates : booked_on
+
+venue_event_packages ||--o{ venue_package_services : contains
+venue_package_services }o--o| provider_services : links
+
+provider_services ||--o{ option_groups : has
+option_groups ||--o{ options : contains
+
+event_plans }o--o| venues : selects
+event_plans }o--o| venue_event_packages : selects
+event_plans ||--o{ event_plan_services : includes
+event_plan_services }|--|| provider_services : references
+
+orders ||--o{ venue_booked_dates : generates
+
+note right of orders
+  items (jsonb) stores
+  venue + service lines
+  with snapshots
+end note
+
+note bottom of options
+  price_adjustment =
+  full option price
+end note
+
+@enduml

@@ -1,0 +1,110 @@
+@startuml nairly-usecase
+' Nairly — Use Case Diagram
+' Зүүн: Admin, Provider | Төв: босоо | Баруун: Customer
+' Render: plantuml docs/nairly-usecase.puml
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName "Times New Roman"
+skinparam usecase {
+  BackgroundColor white
+  BorderColor black
+  FontSize 10
+}
+
+' ═══ ЗҮҮН: actors (rectangle-ийн ӨМНӨ) ═══
+actor "Админ\n(Admin)" as admin
+actor "Үйлчилгээ үзүүлэгч\n(Provider)" as provider
+admin -[hidden]down- provider
+
+rectangle "Nairly Event Planning System" {
+
+  package "Нээлттэй" as pkg_public {
+    usecase "Байршил хайх, шүүх" as UC_BrowseVenues
+    usecase "Үйлчилгээ хайх" as UC_BrowseServices
+    usecase "Дэлгэрэнгүй харах" as UC_Detail
+    usecase "Ангилал харах" as UC_Categories
+    usecase "Боломжит огноо шалгах" as UC_Availability
+  }
+
+  package "Захиалга, төлөвлөгөө" as pkg_customer {
+    usecase "Хүслийн жагсаалт" as UC_Wishlist
+    usecase "Шууд захиалга" as UC_Checkout
+    usecase "Миний захиалга" as UC_MyOrders
+    usecase "Үнэлгээ бичих" as UC_Review
+    usecase "Төлөвлөгөө үүсгэх" as UC_CreatePlan
+    usecase "Төлөвлөгөөгөөс захиалах" as UC_PlanCheckout
+    usecase "Үйлчилгээний сонголт" as UC_SelectOptions
+  }
+
+  package "Provider" as pkg_provider {
+    usecase "Байршил удирдах" as UC_ManageVenues
+    usecase "Багц удирдах" as UC_ManagePackages
+    usecase "Цагийн хуваарь" as UC_TimeSlots
+    usecase "Үйлчилгээ удирдах" as UC_ManageServices
+    usecase "Сонголтын бүлэг" as UC_ManageOptions
+    usecase "Зураг upload" as UC_Upload
+    usecase "Захиалга, статистик" as UC_ProviderOrders
+  }
+
+  package "Админ" as pkg_admin {
+    usecase "Provider батлах" as UC_VerifyProvider
+    usecase "Бүх захиалга" as UC_AdminOrders
+    usecase "Захиалгын статистик" as UC_OrderStats
+    usecase "Эрх удирдах" as UC_UserRoles
+    usecase "Системийн ажиглалт" as UC_Monitoring
+  }
+
+  ' Багцуудыг зөвхөн босоо байрлуулна (2x2 grid-ээс сэргийлнэ)
+  pkg_public -[hidden]down- pkg_customer
+  pkg_customer -[hidden]down- pkg_provider
+  pkg_provider -[hidden]down- pkg_admin
+
+}
+
+' ═══ БАРУУН: actor (rectangle-ийн ДАРАА) ═══
+actor "Үйлчлүүлэгч\n(Customer)" as customer
+
+' ═══ 3 багана lock (зүүн → төв → баруун) ═══
+admin -[hidden]right- pkg_admin
+provider -[hidden]right- pkg_provider
+pkg_customer -[hidden]right- customer
+
+' ═══ Associations ═══
+admin --> UC_VerifyProvider
+admin --> UC_AdminOrders
+admin --> UC_OrderStats
+admin --> UC_UserRoles
+admin --> UC_Monitoring
+admin --> UC_ManageVenues
+admin --> UC_ManageServices
+
+provider --> UC_ManageVenues
+provider --> UC_ManagePackages
+provider --> UC_TimeSlots
+provider --> UC_ManageServices
+provider --> UC_ManageOptions
+provider --> UC_Upload
+provider --> UC_ProviderOrders
+
+customer --> UC_BrowseVenues
+customer --> UC_BrowseServices
+customer --> UC_Detail
+customer --> UC_Categories
+customer --> UC_Wishlist
+customer --> UC_Checkout
+customer --> UC_MyOrders
+customer --> UC_Review
+customer --> UC_CreatePlan
+customer --> UC_PlanCheckout
+
+' ═══ Include / Extend ═══
+UC_Checkout ..> UC_SelectOptions : <<include>>
+UC_PlanCheckout ..> UC_Checkout : <<include>>
+UC_Detail ..> UC_Availability : <<include>>
+UC_ManageServices ..> UC_ManageOptions : <<extend>>
+UC_ManagePackages ..> UC_ManageServices : <<include>>
+
+@enduml

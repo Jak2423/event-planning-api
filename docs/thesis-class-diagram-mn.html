@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3.3 Домэйн загварын класс диаграм</title>
+  <style>
+    @page { size: A4 landscape; margin: 1.5cm; }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Times New Roman", Times, serif;
+      font-size: 11pt;
+      line-height: 1.45;
+      color: #000;
+      background: #fff;
+      padding: 1.5cm 1cm;
+    }
+
+    h2 {
+      font-size: 14pt;
+      margin-bottom: 10pt;
+    }
+
+    p {
+      text-align: justify;
+      text-indent: 1.25cm;
+      margin-bottom: 8pt;
+    }
+
+    .diagram-wrap {
+      page-break-inside: avoid;
+      margin: 14pt 0 18pt;
+      overflow-x: auto;
+    }
+
+    svg text {
+      font-family: "Times New Roman", Times, serif;
+    }
+
+    .class-box { fill: #fff; stroke: #000; stroke-width: 1.2; }
+    .class-title { font-size: 11px; font-weight: bold; }
+    .class-stereo { font-size: 9px; font-style: italic; }
+    .class-attr { font-size: 9.5px; }
+    .class-divider { stroke: #000; stroke-width: 1; }
+    .assoc { stroke: #333; stroke-width: 1; fill: none; }
+    .assoc-label { font-size: 9px; fill: #222; }
+    .inherit { stroke: #000; stroke-width: 1; fill: none; }
+
+    .caption {
+      font-size: 11pt;
+      text-align: center;
+      margin-top: 8pt;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16pt;
+      justify-content: center;
+      font-size: 9pt;
+      margin-top: 10pt;
+      color: #333;
+    }
+
+    .legend span::before {
+      content: "—";
+      margin-right: 4pt;
+    }
+
+    @media print {
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <h2>3.3 Домэйн загварын класс диаграм</h2>
+
+  <p>
+    Дараах зурагт «Nairly» системийн үндсэн домэйн объектууд (entity), тэдгээрийн
+    атрибутууд болон хоорондын харилцааг UML класс диаграмын хэлбэрээр
+    илэрхийлэв. Систем нь хэрэглэгч, байршил, үйлчилгээ, төлөвлөгөө, захиалга
+    гэсэн гол классуудаас бүрдэнэ.
+  </p>
+
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 980 620" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg">
+
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+          <path d="M0,0 L7,3 L0,6 Z" fill="#333"/>
+        </marker>
+        <marker id="diamond" markerWidth="10" markerHeight="10" refX="0" refY="3" orient="auto">
+          <path d="M0,3 L5,0 L10,3 L5,6 Z" fill="#fff" stroke="#333" stroke-width="1"/>
+        </marker>
+      </defs>
+
+      <!-- ── User ── -->
+      <g transform="translate(400,20)">
+        <rect class="class-box" width="180" height="88" rx="2"/>
+        <text class="class-title" x="90" y="18" text-anchor="middle">User</text>
+        <text class="class-stereo" x="90" y="30" text-anchor="middle">«Хэрэглэгч»</text>
+        <line class="class-divider" x1="0" y1="36" x2="180" y2="36"/>
+        <text class="class-attr" x="8" y="50">- id: UUID</text>
+        <text class="class-attr" x="8" y="62">- email: String</text>
+        <text class="class-attr" x="8" y="74">- role: customer | provider | admin</text>
+      </g>
+
+      <!-- ── Category ── -->
+      <g transform="translate(30,130)">
+        <rect class="class-box" width="160" height="72" rx="2"/>
+        <text class="class-title" x="80" y="18" text-anchor="middle">Category</text>
+        <text class="class-stereo" x="80" y="30" text-anchor="middle">«Ангилал»</text>
+        <line class="class-divider" x1="0" y1="36" x2="160" y2="36"/>
+        <text class="class-attr" x="8" y="50">- id, slug, name</text>
+        <text class="class-attr" x="8" y="62">- description</text>
+      </g>
+
+      <!-- ── Venue ── -->
+      <g transform="translate(30,240)">
+        <rect class="class-box" width="200" height="118" rx="2"/>
+        <text class="class-title" x="100" y="18" text-anchor="middle">Venue</text>
+        <text class="class-stereo" x="100" y="30" text-anchor="middle">«Байршил»</text>
+        <line class="class-divider" x1="0" y1="36" x2="200" y2="36"/>
+        <text class="class-attr" x="8" y="50">- id, providerId, categoryId</text>
+        <text class="class-attr" x="8" y="62">- name, slug, location</text>
+        <text class="class-attr" x="8" y="74">- priceFlat, capacityMin/Max</text>
+        <text class="class-attr" x="8" y="86">- status: enabled | disabled</text>
+        <text class="class-attr" x="8" y="98">- imageUrl, amenities[]</text>
+        <text class="class-attr" x="8" y="110">- rating, reviewCount</text>
+      </g>
+
+      <!-- ── VenueTimeSlot ── -->
+      <g transform="translate(30,400)">
+        <rect class="class-box" width="200" height="88" rx="2"/>
+        <text class="class-title" x="100" y="18" text-anchor="middle">VenueTimeSlot</text>
+        <text class="class-stereo" x="100" y="30" text-anchor="middle">«Цагийн хуваарь»</text>
+        <line class="class-divider" x1="0" y1="36" x2="200" y2="36"/>
+        <text class="class-attr" x="8" y="50">- venueId: UUID</text>
+        <text class="class-attr" x="8" y="62">- dayOfWeek: 0..6</text>
+        <text class="class-attr" x="8" y="74">- regularPrice, salePrice</text>
+      </g>
+
+      <!-- ── VenueEventPackage ── -->
+      <g transform="translate(260,240)">
+        <rect class="class-box" width="210" height="106" rx="2"/>
+        <text class="class-title" x="105" y="18" text-anchor="middle">VenueEventPackage</text>
+        <text class="class-stereo" x="105" y="30" text-anchor="middle">«Арга хэмжээний багц»</text>
+        <line class="class-divider" x1="0" y1="36" x2="210" y2="36"/>
+        <text class="class-attr" x="8" y="50">- id, venueId, name, slug</text>
+        <text class="class-attr" x="8" y="62">- pricePerPerson: Integer</text>
+        <text class="class-attr" x="8" y="74">- guestsMin, guestsMax</text>
+        <text class="class-attr" x="8" y="86">- imageUrl, images[]</text>
+        <text class="class-attr" x="8" y="98">- isActive: Boolean</text>
+      </g>
+
+      <!-- ── VenuePackageService ── -->
+      <g transform="translate(260,390)">
+        <rect class="class-box" width="210" height="98" rx="2"/>
+        <text class="class-title" x="105" y="18" text-anchor="middle">VenuePackageService</text>
+        <text class="class-stereo" x="105" y="30" text-anchor="middle">«Багцын мөр»</text>
+        <line class="class-divider" x1="0" y1="36" x2="210" y2="36"/>
+        <text class="class-attr" x="8" y="50">- packageId, kind, title</text>
+        <text class="class-attr" x="8" y="62">- quantity, isIncluded</text>
+        <text class="class-attr" x="8" y="74">- providerServiceId?</text>
+        <text class="class-attr" x="8" y="86">- sortOrder</text>
+      </g>
+
+      <!-- ── ProviderService ── -->
+      <g transform="translate(530,130)">
+        <rect class="class-box" width="210" height="118" rx="2"/>
+        <text class="class-title" x="105" y="18" text-anchor="middle">ProviderService</text>
+        <text class="class-stereo" x="105" y="30" text-anchor="middle">«Үйлчилгээ»</text>
+        <line class="class-divider" x1="0" y1="36" x2="210" y2="36"/>
+        <text class="class-attr" x="8" y="50">- id, providerId, slug</text>
+        <text class="class-attr" x="8" y="62">- name, kind, priceFlat</text>
+        <text class="class-attr" x="8" y="74">- status: enabled | disabled</text>
+        <text class="class-attr" x="8" y="86">- contactPhone, contactEmail</text>
+        <text class="class-attr" x="8" y="98">- website, imageUrl</text>
+        <text class="class-attr" x="8" y="110">- images[]</text>
+      </g>
+
+      <!-- ── OptionGroup ── -->
+      <g transform="translate(770,130)">
+        <rect class="class-box" width="190" height="88" rx="2"/>
+        <text class="class-title" x="95" y="18" text-anchor="middle">ServiceOptionGroup</text>
+        <text class="class-stereo" x="95" y="30" text-anchor="middle">«Сонголтын бүлэг»</text>
+        <line class="class-divider" x1="0" y1="36" x2="190" y2="36"/>
+        <text class="class-attr" x="8" y="50">- serviceId, title</text>
+        <text class="class-attr" x="8" y="62">- isRequired, maxChoices</text>
+        <text class="class-attr" x="8" y="74">- sortOrder</text>
+      </g>
+
+      <!-- ── Option ── -->
+      <g transform="translate(770,250)">
+        <rect class="class-box" width="190" height="88" rx="2"/>
+        <text class="class-title" x="95" y="18" text-anchor="middle">ServiceOption</text>
+        <text class="class-stereo" x="95" y="30" text-anchor="middle">«Сонголт»</text>
+        <line class="class-divider" x1="0" y1="36" x2="190" y2="36"/>
+        <text class="class-attr" x="8" y="50">- groupId, label</text>
+        <text class="class-attr" x="8" y="62">- priceAdjustment</text>
+        <text class="class-attr" x="8" y="74">- imageUrl, isActive</text>
+      </g>
+
+      <!-- ── EventPlan ── -->
+      <g transform="translate(500,390)">
+        <rect class="class-box" width="200" height="106" rx="2"/>
+        <text class="class-title" x="100" y="18" text-anchor="middle">EventPlan</text>
+        <text class="class-stereo" x="100" y="30" text-anchor="middle">«Төлөвлөгөө»</text>
+        <line class="class-divider" x1="0" y1="36" x2="200" y2="36"/>
+        <text class="class-attr" x="8" y="50">- userId, name, budget</text>
+        <text class="class-attr" x="8" y="62">- eventDate, guestCount</text>
+        <text class="class-attr" x="8" y="74">- venueId?, packageId?</text>
+        <text class="class-attr" x="8" y="86">- venueBookingDate</text>
+        <text class="class-attr" x="8" y="98">- status: draft | archived</text>
+      </g>
+
+      <!-- ── EventPlanService ── -->
+      <g transform="translate(500,530)">
+        <rect class="class-box" width="200" height="88" rx="2"/>
+        <text class="class-title" x="100" y="18" text-anchor="middle">EventPlanService</text>
+        <text class="class-stereo" x="100" y="30" text-anchor="middle">«Төлөвлөгөөний мөр»</text>
+        <line class="class-divider" x1="0" y1="36" x2="200" y2="36"/>
+        <text class="class-attr" x="8" y="50">- planId, providerServiceId</text>
+        <text class="class-attr" x="8" y="62">- quantity, sortOrder</text>
+        <text class="class-attr" x="8" y="74">- selectedOptionIds[]</text>
+      </g>
+
+      <!-- ── Order ── -->
+      <g transform="translate(730,390)">
+        <rect class="class-box" width="200" height="106" rx="2"/>
+        <text class="class-title" x="100" y="18" text-anchor="middle">Order</text>
+        <text class="class-stereo" x="100" y="30" text-anchor="middle">«Захиалга»</text>
+        <line class="class-divider" x1="0" y1="36" x2="200" y2="36"/>
+        <text class="class-attr" x="8" y="50">- userId, customerName</text>
+        <text class="class-attr" x="8" y="62">- customerEmail, customerPhone</text>
+        <text class="class-attr" x="8" y="74">- items: JSON[]</text>
+        <text class="class-attr" x="8" y="86">- subtotal, total</text>
+        <text class="class-attr" x="8" y="98">- status: pending | paid | cancelled</text>
+      </g>
+
+      <!-- ── OrderItem (value object) ── -->
+      <g transform="translate(730,530)">
+        <rect class="class-box" width="200" height="88" rx="2" stroke-dasharray="5,3"/>
+        <text class="class-title" x="100" y="18" text-anchor="middle">OrderItem</text>
+        <text class="class-stereo" x="100" y="30" text-anchor="middle">«Захиалгын мөр»</text>
+        <line class="class-divider" x1="0" y1="36" x2="200" y2="36"/>
+        <text class="class-attr" x="8" y="50">- itemType: venue | service</text>
+        <text class="class-attr" x="8" y="62">- price, quantity/guestCount</text>
+        <text class="class-attr" x="8" y="74">- selectedOptions[], snapshot</text>
+      </g>
+
+      <!-- ── Wishlist ── -->
+      <g transform="translate(30,530)">
+        <rect class="class-box" width="180" height="72" rx="2"/>
+        <text class="class-title" x="90" y="18" text-anchor="middle">VenueWishlist</text>
+        <text class="class-stereo" x="90" y="30" text-anchor="middle">«Хүслийн жагсаалт»</text>
+        <line class="class-divider" x1="0" y1="36" x2="180" y2="36"/>
+        <text class="class-attr" x="8" y="50">- userId, venueId</text>
+        <text class="class-attr" x="8" y="62">- createdAt</text>
+      </g>
+
+      <!-- ── Associations ── -->
+
+      <!-- User -> Venue 1..* -->
+      <path class="assoc" d="M 460 108 L 130 240" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="260" y="168">1 owns 0..*</text>
+
+      <!-- User -> ProviderService -->
+      <path class="assoc" d="M 520 80 L 635 130" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="560" y="95">1 provides 0..*</text>
+
+      <!-- Category -> Venue -->
+      <path class="assoc" d="M 110 202 L 110 240" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="118" y="225">1  0..*</text>
+
+      <!-- Venue -> Package -->
+      <path class="assoc" d="M 230 290 L 260 290" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="232" y="282">1  0..*</text>
+
+      <!-- Venue -> TimeSlot -->
+      <path class="assoc" d="M 130 358 L 130 400" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="138" y="382">1  0..7</text>
+
+      <!-- Package -> PackageService -->
+      <path class="assoc" d="M 365 346 L 365 390" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="372" y="372">1  0..*</text>
+
+      <!-- PackageService -> ProviderService -->
+      <path class="assoc" d="M 470 430 L 635 220" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="530" y="310">0..1 links</text>
+
+      <!-- Service -> OptionGroup -->
+      <path class="assoc" d="M 740 170 L 770 170" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="744" y="162">1  0..*</text>
+
+      <!-- OptionGroup -> Option -->
+      <path class="assoc" d="M 865 218 L 865 250" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="872" y="238">1  1..*</text>
+
+      <!-- User -> EventPlan -->
+      <path class="assoc" d="M 490 108 L 580 390" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="510" y="260">1 creates 0..*</text>
+
+      <!-- EventPlan -> Venue -->
+      <path class="assoc" d="M 500 440 L 230 310" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="340" y="360">0..1 selects</text>
+
+      <!-- EventPlan -> EventPlanService -->
+      <path class="assoc" d="M 600 496 L 600 530" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="608" y="516">1  0..*</text>
+
+      <!-- EventPlanService -> ProviderService -->
+      <path class="assoc" d="M 700 560 L 635 248" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="680" y="400">* references 1</text>
+
+      <!-- User -> Order -->
+      <path class="assoc" d="M 580 108 L 800 390" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="720" y="240">1 places 0..*</text>
+
+      <!-- Order composition OrderItem -->
+      <path class="assoc" d="M 830 496 L 830 530" marker-end="url(#diamond)"/>
+      <text class="assoc-label" x="838" y="516">1  1..*</text>
+
+      <!-- User -> Wishlist -->
+      <path class="assoc" d="M 400 108 L 120 530" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="220" y="340">1  0..*</text>
+
+      <!-- Wishlist -> Venue -->
+      <path class="assoc" d="M 210 560 L 130 358" marker-end="url(#arrow)"/>
+      <text class="assoc-label" x="155" y="470">*  1</text>
+
+    </svg>
+  </div>
+
+  <p class="caption" style="text-indent:0">
+    <strong>Зураг 3.2.</strong> Nairly системийн домэйн класс диаграм
+  </p>
+
+  <div class="legend">
+    <span>User — Supabase Auth хэрэглэгч</span>
+    <span>OrderItem — orders.items JSON дотор хадгалагдах value object</span>
+    <span>ServiceOption.priceAdjustment — сонголтын бүрэн үнэ</span>
+  </div>
+
+  <p>
+    <strong>User</strong> класс нь системийн бүх оролцогчийг илэрхийлж, customer,
+    provider, admin гэсэн эрхийн түвшинг агуулна. <strong>Venue</strong> болон
+    <strong>ProviderService</strong> классууд provider-т хамаарна.
+    <strong>VenueEventPackage</strong> нь байршлын арга хэмжээний багцыг,
+    <strong>VenuePackageService</strong> нь багцад багтах үйлчилгээний мөрийг
+    тодорхойлно. <strong>ProviderService</strong>-д <strong>ServiceOptionGroup</strong>
+    болон <strong>ServiceOption</strong> композит харилцаагаар сонголтын
+    боломжуудыг нэмнэ. <strong>EventPlan</strong> нь хэрэглэгчийн төсөв,
+    сонгосон байршил болон үйлчилгээнүүдийг нэгтгэнэ; <strong>Order</strong> нь
+    баталгаажсан захиалгыг <strong>OrderItem</strong> объектуудын JSON массиваар
+    хадгална.
+  </p>
+
+</body>
+</html>

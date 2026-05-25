@@ -1,0 +1,169 @@
+@startuml
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam linetype ortho
+skinparam class {
+  BackgroundColor white
+  BorderColor black
+  ArrowColor black
+  FontName "Times New Roman"
+  FontSize 11
+}
+skinparam defaultFontName "Times New Roman"
+
+
+class User {
+  - id : UUID
+  - email : String
+  - role : customer | provider | admin
+}
+
+class Category {
+  - id : UUID
+  - slug : String
+  - name : String
+  - description : String
+}
+
+class Venue {
+  - id : UUID
+  - providerId : UUID
+  - categoryId : UUID
+  - name : String
+  - slug : String
+  - location : String
+  - priceFlat : Integer
+  - capacityMin : Integer
+  - capacityMax : Integer
+  - status : enabled | disabled
+  - imageUrl : String
+  - rating : Float
+}
+
+class VenueTimeSlot {
+  - venueId : UUID
+  - dayOfWeek : Integer {0..6}
+  - regularPrice : Integer
+  - salePrice : Integer
+  - isOnSale : Boolean
+}
+
+class VenueEventPackage {
+  - id : UUID
+  - venueId : UUID
+  - name : String
+  - slug : String
+  - pricePerPerson : Integer
+  - guestsMin : Integer
+  - guestsMax : Integer
+  - imageUrl : String
+  - isActive : Boolean
+}
+
+class VenuePackageService {
+  - packageId : UUID
+  - kind : String
+  - title : String
+  - quantity : Integer
+  - isIncluded : Boolean
+  - providerServiceId : UUID {optional}
+  - sortOrder : Integer
+}
+
+class ProviderService {
+  - id : UUID
+  - providerId : UUID
+  - slug : String
+  - name : String
+  - kind : service_kind
+  - priceFlat : Integer
+  - status : enabled | disabled
+  - contactPhone : String
+  - contactEmail : String
+  - website : String
+  - imageUrl : String
+}
+
+
+
+class EventPlan {
+  - id : UUID
+  - userId : UUID
+  - name : String
+  - budget : Integer
+  - eventDate : Date
+  - guestCount : Integer
+  - venueId : UUID {optional}
+  - venuePackageId : UUID {optional}
+  - venueBookingDate : Date
+  - status : draft | archived
+}
+
+class EventPlanService {
+  - id : UUID
+  - planId : UUID
+  - providerServiceId : UUID
+  - quantity : Integer
+  - sortOrder : Integer
+  - selectedOptionIds : UUID[]
+}
+
+class Order {
+  - id : UUID
+  - userId : UUID
+  - customerName : String
+  - customerEmail : String
+  - customerPhone : String
+  - paymentMethod : String
+  - subtotal : Integer
+  - total : Integer
+  - status : pending | paid | cancelled
+}
+
+class OrderItem {
+  - itemType : venue | service
+  - price : Integer
+  - quantity : Integer
+  - guestCount : Integer
+  - selectedOptions : UUID[]
+  - serviceSnapshot : JSON
+  - packageSnapshot : JSON
+}
+
+class VenueWishlist {
+  - id : UUID
+  - userId : UUID
+  - venueId : UUID
+  - createdAt : DateTime
+}
+
+' ── Харилцаа ──
+
+User "1" --> "0..*" Venue : owns >
+User "1" --> "0..*" ProviderService : provides >
+User "1" --> "0..*" EventPlan : creates >
+User "1" --> "0..*" Order : places >
+User "1" --> "0..*" VenueWishlist : saves >
+
+Category "1" --> "0..*" Venue : classifies >
+
+Venue "1" --> "0..*" VenueEventPackage : contains >
+Venue "1" --> "0..7" VenueTimeSlot : schedules >
+
+VenueEventPackage "1" *-- "0..*" VenuePackageService : composition
+
+VenuePackageService "0..1" --> "1" ProviderService : links >
+
+
+EventPlan "0..1" --> "1" Venue : selects >
+EventPlan "0..1" --> "1" VenueEventPackage : selects >
+EventPlan "1" *-- "0..*" EventPlanService : composition
+
+EventPlanService "*" --> "1" ProviderService : references >
+
+Order "1" *-- "1..*" OrderItem : items >
+
+VenueWishlist "*" --> "1" Venue : references >
+
+
+@enduml

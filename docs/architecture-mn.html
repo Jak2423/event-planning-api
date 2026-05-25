@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nairly — Системийн архитектур</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --surface: #1a2332;
+      --surface2: #243044;
+      --border: #2d3f56;
+      --text: #e8edf4;
+      --muted: #8b9cb3;
+      --accent: #3b82f6;
+      --accent2: #8b5cf6;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --rose: #f43f5e;
+      --cyan: #06b6d4;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    header h1 {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 700;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: var(--muted);
+      font-size: 1.05rem;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      margin-top: 1.25rem;
+    }
+
+    .badge {
+      font-size: 0.75rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+    }
+
+    section {
+      margin-bottom: 2.5rem;
+    }
+
+    section > h2 {
+      font-size: 1.1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Main diagram ── */
+    .diagram {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    .layer {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .layer-label {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .boxes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.1rem 1.35rem;
+      min-width: 160px;
+      text-align: center;
+      transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .box:hover {
+      transform: translateY(-3px);
+      border-color: var(--accent);
+      box-shadow: 0 8px 24px rgba(59, 130, 246, 0.15);
+    }
+
+    .box .icon {
+      font-size: 1.75rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .box strong {
+      display: block;
+      font-size: 0.95rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .box span {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .box.client  { border-top: 3px solid var(--cyan); }
+    .box.api     { border-top: 3px solid var(--accent); min-width: 220px; }
+    .box.lib     { border-top: 3px solid var(--accent2); }
+    .box.db      { border-top: 3px solid var(--green); }
+    .box.auth    { border-top: 3px solid var(--amber); }
+
+    .connector {
+      width: 2px;
+      height: 36px;
+      background: linear-gradient(to bottom, var(--border), var(--accent));
+      position: relative;
+    }
+
+    .connector::after {
+      content: "▼";
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.55rem;
+      color: var(--accent);
+    }
+
+    .connector-h {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      width: 100%;
+      max-width: 700px;
+      margin: 0.5rem 0;
+    }
+
+    .connector-h .line {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+    }
+
+    .connector-h .hub {
+      background: var(--surface2);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+
+    /* ── API modules grid ── */
+    .modules {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.85rem;
+    }
+
+    .module {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+
+    .module h3 {
+      font-size: 0.88rem;
+      color: var(--accent);
+      margin-bottom: 0.35rem;
+    }
+
+    .module p {
+      font-size: 0.78rem;
+      color: var(--muted);
+    }
+
+    .module .access {
+      display: inline-block;
+      margin-top: 0.5rem;
+      font-size: 0.68rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      background: var(--surface2);
+      color: var(--muted);
+    }
+
+    .access.public { color: var(--green); }
+    .access.auth   { color: var(--amber); }
+    .access.admin  { color: var(--rose); }
+
+    /* ── Roles ── */
+    .roles {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 1rem;
+    }
+
+    .role {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.15rem;
+      border-left: 4px solid var(--accent);
+    }
+
+    .role.customer { border-left-color: var(--cyan); }
+    .role.provider { border-left-color: var(--green); }
+    .role.admin    { border-left-color: var(--rose); }
+    .role.super    { border-left-color: var(--amber); }
+
+    .role h3 { font-size: 0.95rem; margin-bottom: 0.4rem; }
+    .role ul { font-size: 0.8rem; color: var(--muted); padding-left: 1.1rem; }
+    .role li { margin-bottom: 0.2rem; }
+
+    /* ── Pricing table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+
+    th, td {
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--surface);
+      color: var(--muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    td:first-child { color: var(--text); font-weight: 500; }
+    td:last-child  { color: var(--cyan); font-family: ui-monospace, monospace; font-size: 0.8rem; }
+
+    tr:hover td { background: rgba(59, 130, 246, 0.05); }
+
+    /* ── Flow steps ── */
+    .flows {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1.25rem;
+    }
+
+    .flow {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .flow-header {
+      padding: 0.85rem 1.15rem;
+      background: var(--surface2);
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .flow-steps {
+      padding: 1rem 1.15rem;
+      list-style: none;
+    }
+
+    .flow-steps li {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      font-size: 0.82rem;
+      color: var(--muted);
+      padding: 0.45rem 0;
+      border-bottom: 1px dashed var(--border);
+    }
+
+    .flow-steps li:last-child { border-bottom: none; }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+
+    <header>
+      <h1>Nairly — Системийн архитектур</h1>
+      <p>Арга хэмжээний төлөвлөлтийн зах зээл · Монгол · REST API</p>
+      <div class="badge-row">
+        <span class="badge">Node.js</span>
+        <span class="badge">Hono</span>
+        <span class="badge">TypeScript</span>
+        <span class="badge">Supabase</span>
+        <span class="badge">PostgreSQL</span>
+        <span class="badge">JWT</span>
+      </div>
+    </header>
+
+    <!-- Үндсэн диаграм -->
+    <section>
+      <h2>Ерөнхий бүтэц</h2>
+      <div class="diagram">
+
+        <div class="layer">
+          <div class="layer-label">Клиент давхарга</div>
+          <div class="boxes">
+            <div class="box client">
+              <div class="icon">🌐</div>
+              <strong>event-planning</strong>
+              <span>Next.js · Үйлчлүүлэгч + Үйлчилгээ үзүүлэгч</span>
+            </div>
+            <div class="box client">
+              <div class="icon">🛡️</div>
+              <strong>event-planning-admin</strong>
+              <span>Админ самбар</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <div class="connector-h">
+          <div class="line"></div>
+          <div class="hub">REST + Bearer JWT · api.nairly.mn</div>
+          <div class="line"></div>
+        </div>
+
+        <div class="connector"></div>
+
+        <div class="layer">
+          <div class="layer-label">API давхарга — event-planning-api</div>
+          <div class="boxes">
+            <div class="box api">
+              <div class="icon">⚡</div>
+              <strong>Hono REST API</strong>
+              <span>Порт 4000 · CORS · Алдааны боловсруулалт</span>
+            </div>
+          </div>
+          <div class="connector" style="height:24px"></div>
+          <div class="boxes">
+            <div class="box lib">
+              <div class="icon">🔐</div>
+              <strong>Middleware</strong>
+              <span>authenticate · requireProvider · requireAdmin</span>
+            </div>
+            <div class="box lib">
+              <div class="icon">📂</div>
+              <strong>Routes</strong>
+              <span>venues · services · orders · event-plans</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="connector"></div>
+
+        <div class="layer">
+          <div class="layer-label">Өгөгдлийн давхарга — Supabase</div>
+          <div class="boxes">
+            <div class="box auth">
+              <div class="icon">🔑</div>
+              <strong>Supabase Auth</strong>
+              <span>JWT баталгаажуулалт</span>
+            </div>
+            <div class="box db">
+              <div class="icon">🗄️</div>
+              <strong>PostgreSQL</strong>
+              <span>venues · services · orders · plans</span>
+            </div>
+            <div class="box db">
+              <div class="icon">🖼️</div>
+              <strong>Storage</strong>
+              <span>Зураг upload</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- API модулиуд -->
+    <section>
+      <h2>API маршрутууд</h2>
+      <div class="modules">
+        <div class="module">
+          <h3>/venues</h3>
+          <p>Байршлын жагсаалт, CRUD, боломжит огноо, багц</p>
+          <span class="access public">Нээлттэй + Provider</span>
+        </div>
+        <div class="module">
+          <h3>/services</h3>
+          <p>Үйлчилгээний каталог, сонголтын бүлэг (амт, машины загвар)</p>
+          <span class="access public">Нээлттэй + Provider</span>
+        </div>
+        <div class="module">
+          <h3>/orders</h3>
+          <p>Захиалга үүсгэх, миний захиалгууд</p>
+          <span class="access auth">Нэвтэрсэн хэрэглэгч</span>
+        </div>
+        <div class="module">
+          <h3>/event-plans</h3>
+          <p>Төсөв төлөвлөгөө · байршил + үйлчилгээ + checkout</p>
+          <span class="access auth">Нэвтэрсэн хэрэглэгч</span>
+        </div>
+        <div class="module">
+          <h3>/provider</h3>
+          <p>Үйлчилгээ үзүүлэгчийн статистик, захиалга</p>
+          <span class="access auth">Provider</span>
+        </div>
+        <div class="module">
+          <h3>/admin/*</h3>
+          <p>Бүх захиалга, provider баталгаажуулалт</p>
+          <span class="access admin">Admin</span>
+        </div>
+        <div class="module">
+          <h3>/uploads</h3>
+          <p>Байршил, багц, үйлчилгээний зураг</p>
+          <span class="access auth">Provider</span>
+        </div>
+        <div class="module">
+          <h3>/monitoring</h3>
+          <p>Superadmin ажиглалтын самбар</p>
+          <span class="access admin">Superadmin</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Эрхийн түвшин -->
+    <section>
+      <h2>Хэрэглэгчийн эрх</h2>
+      <div class="roles">
+        <div class="role customer">
+          <h3>👤 Үйлчлүүлэгч (customer)</h3>
+          <ul>
+            <li>Байршил, үйлчилгээ хайх</li>
+            <li>Сагс, шууд захиалга</li>
+            <li>Арга хэмжээний төлөвлөгөө</li>
+            <li>Хүслийн жагсаалт</li>
+          </ul>
+        </div>
+        <div class="role provider">
+          <h3>🏢 Үйлчилгээ үзүүлэгч (provider)</h3>
+          <ul>
+            <li>Өөрийн байршил, багц удирдах</li>
+            <li>Үйлчилгээ + сонголтын бүлэг</li>
+            <li>Цагийн хуваарь, үнэ</li>
+            <li>Захиалга харах</li>
+          </ul>
+        </div>
+        <div class="role admin">
+          <h3>⚙️ Админ (admin)</h3>
+          <ul>
+            <li>Бүх захиалга</li>
+            <li>Provider баталгаажуулах</li>
+            <li>Хэрэглэгчийн удирдлага</li>
+          </ul>
+        </div>
+        <div class="role super">
+          <h3>🔒 Superadmin</h3>
+          <ul>
+            <li>/monitoring самбар</li>
+            <li>Тусдаа нэвтрэлт (JWT-ээс өөр)</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Үнийн тооцоолол -->
+    <section>
+      <h2>Үнийн тооцоолол (server-side)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Бүтээгдэхүүн</th>
+            <th>Томъёо</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Зөвхөн байршил</td>
+            <td>price_flat</td>
+          </tr>
+          <tr>
+            <td>Байршил + багц</td>
+            <td>price_per_person × зочдын тоо</td>
+          </tr>
+          <tr>
+            <td>Үйлчилгээ (сонголтгүй)</td>
+            <td>price_flat</td>
+          </tr>
+          <tr>
+            <td>Үйлчилгээ + сонголт</td>
+            <td>сонгосон option-ийн үнийн нийлбэр</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- Урсгал -->
+    <section>
+      <h2>Гол урсгалууд</h2>
+      <div class="flows">
+        <div class="flow">
+          <div class="flow-header">🛒 Шууд захиалга</div>
+          <ol class="flow-steps">
+            <li><span class="step-num">1</span> Байршил / үйлчилгээ сонгох</li>
+            <li><span class="step-num">2</span> Сонголт хийх (байвал)</li>
+            <li><span class="step-num">3</span> POST /orders/make-order</li>
+            <li><span class="step-num">4</span> Сервер үнийг дахин тооцоолно</li>
+            <li><span class="step-num">5</span> Захиалга хадгалагдана</li>
+          </ol>
+        </div>
+        <div class="flow">
+          <div class="flow-header">📋 Төлөвлөгөө бүтээх</div>
+          <ol class="flow-steps">
+            <li><span class="step-num">1</span> POST /event-plans (төсөв)</li>
+            <li><span class="step-num">2</span> Байршил сонгох</li>
+            <li><span class="step-num">3</span> Үйлчилгээ + option нэмэх</li>
+            <li><span class="step-num">4</span> Төсөв vs зардал харьцуулах</li>
+            <li><span class="step-num">5</span> POST /event-plans/:id/checkout</li>
+          </ol>
+        </div>
+        <div class="flow">
+          <div class="flow-header">🏗️ Provider удирдлага</div>
+          <ol class="flow-steps">
+            <li><span class="step-num">1</span> Байршил, багц үүсгэх</li>
+            <li><span class="step-num">2</span> Үйлчилгээ + option_groups</li>
+            <li><span class="step-num">3</span> Зураг upload</li>
+            <li><span class="step-num">4</span> Захиалга хүлээн авах</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Nairly event-planning-api · localhost:4000 (dev) · api.nairly.mn (prod)
+    </footer>
+
+  </div>
+</body>
+</html>

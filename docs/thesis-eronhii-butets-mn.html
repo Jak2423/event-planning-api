@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3.2 Системийн ерөнхий бүтэц</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 2.5cm 2cm 2.5cm 3cm;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Times New Roman", Times, serif;
+      font-size: 12pt;
+      line-height: 1.5;
+      color: #000;
+      background: #fff;
+      max-width: 17cm;
+      margin: 0 auto;
+      padding: 2cm 0;
+    }
+
+    h2 {
+      font-size: 14pt;
+      font-weight: bold;
+      text-align: left;
+      margin-bottom: 12pt;
+    }
+
+    p {
+      text-align: justify;
+      text-indent: 1.25cm;
+      margin-bottom: 10pt;
+    }
+
+    p.no-indent {
+      text-indent: 0;
+    }
+
+    .figure-block {
+      margin: 18pt 0 24pt;
+      page-break-inside: avoid;
+    }
+
+    .figure-label {
+      font-size: 12pt;
+      font-weight: bold;
+      text-align: center;
+      margin-bottom: 12pt;
+    }
+
+    /* ── Diagram (thesis: grayscale-friendly) ── */
+    .diagram {
+      border: 1px solid #333;
+      padding: 20pt 16pt;
+      background: #fafafa;
+    }
+
+    .layer {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .layer-label {
+      font-size: 10pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10pt;
+      color: #333;
+    }
+
+    .boxes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10pt;
+      justify-content: center;
+      width: 100%;
+    }
+
+    .box {
+      border: 1px solid #555;
+      background: #fff;
+      border-radius: 4pt;
+      padding: 10pt 14pt;
+      min-width: 140pt;
+      max-width: 200pt;
+      text-align: center;
+    }
+
+    .box strong {
+      display: block;
+      font-size: 11pt;
+      margin-bottom: 4pt;
+    }
+
+    .box span {
+      display: block;
+      font-size: 9pt;
+      color: #444;
+      line-height: 1.35;
+    }
+
+    .connector {
+      width: 1px;
+      height: 22pt;
+      background: #333;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .connector::after {
+      content: "▼";
+      position: absolute;
+      bottom: -5pt;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 7pt;
+      color: #333;
+    }
+
+    .connector-h {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      max-width: 420pt;
+      margin: 6pt auto;
+    }
+
+    .connector-h .line {
+      flex: 1;
+      height: 1px;
+      background: #333;
+    }
+
+    .connector-h .hub {
+      border: 1px solid #333;
+      background: #fff;
+      padding: 5pt 12pt;
+      font-size: 9pt;
+      font-weight: bold;
+      white-space: nowrap;
+      margin: 0 6pt;
+    }
+
+    .caption {
+      font-size: 11pt;
+      text-align: center;
+      margin-top: 10pt;
+      line-height: 1.4;
+    }
+
+    .caption strong {
+      font-weight: bold;
+    }
+
+    @media print {
+      body { padding: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <h2>3.2 Системийн ерөнхий бүтэц</h2>
+
+  <p>
+    «Nairly» арга хэмжээний төлөвлөлтийн систем нь клиент–сервер архитектурт суурилсан,
+    гурван үндсэн давхаргаас бүрдэнэ. Эхний давхарт хэрэглэгчийн интерфэйсийг хариуцсан
+    веб программууд, хоёр дахь давхарт бизнес логик болон REST API сервер, гурав дахь
+    давхарт өгөгдлийн сан, нэвтрэлт, файлыг хадгалах үйлчилгээ байрлана. Клиент
+    программууд сервертэй HTTP протоколоор холбогдож, Supabase-ийн JWT токен ашиглан
+    баталгаажуулалт хийнэ.
+  </p>
+
+  <p>
+    Системийн ерөнхий бүтцийг дараах зурагт харууллаа.
+  </p>
+
+  <div class="figure-block">
+    <div class="diagram">
+
+      <div class="layer">
+        <div class="layer-label">Клиент давхарга</div>
+        <div class="boxes">
+          <div class="box">
+            <strong>event-planning</strong>
+            <span>Next.js веб програм<br/>Үйлчлүүлэгч · Үйлчилгээ үзүүлэгч</span>
+          </div>
+          <div class="box">
+            <strong>event-planning-admin</strong>
+            <span>Администраторын самбар<br/>Системийн удирдлага</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"></div>
+
+      <div class="connector-h">
+        <div class="line"></div>
+        <div class="hub">REST API · Bearer JWT</div>
+        <div class="line"></div>
+      </div>
+
+      <div class="connector"></div>
+
+      <div class="layer">
+        <div class="layer-label">Серверийн давхарга — event-planning-api</div>
+        <div class="boxes">
+          <div class="box">
+            <strong>Hono REST API</strong>
+            <span>Node.js · TypeScript<br/>Порт 4000</span>
+          </div>
+        </div>
+        <div class="connector" style="height:16pt"></div>
+        <div class="boxes">
+          <div class="box">
+            <strong>Middleware</strong>
+            <span>Нэвтрэлт · Эрхийн шалгалт<br/>CORS</span>
+          </div>
+          <div class="box">
+            <strong>Routes</strong>
+            <span>venues · services<br/>orders · event-plans</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="connector"></div>
+
+      <div class="layer">
+        <div class="layer-label">Өгөгдлийн давхарга — Supabase</div>
+        <div class="boxes">
+          <div class="box">
+            <strong>Supabase Auth</strong>
+            <span>JWT баталгаажуулалт</span>
+          </div>
+          <div class="box">
+            <strong>PostgreSQL</strong>
+            <span>Өгөгдлийн сан</span>
+          </div>
+          <div class="box">
+            <strong>Storage</strong>
+            <span>Файл хадгалалт</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="caption no-indent">
+      <strong>Зураг 3.1.</strong> Nairly системийн ерөнхий бүтэц
+    </p>
+  </div>
+
+  <p>
+    <strong>Клиент давхарга.</strong> «event-planning» нь үйлчлүүлэгч болон үйлчилгээ
+    үзүүлэгчийн үйл ажиллагааг нэгтгэсэн Next.js веб програм бөгөөд байршил хайх,
+    захиалга өгөх, арга хэмжээний төлөвлөгөө бүтээх зэрэг функцуудыг хангана.
+    «event-planning-admin» нь администраторын самбар бөгөөд захиалга, үйлчилгээ
+    үзүүлэгчийг удирдах зориулалттай. Хоёр програм хоёулаа тусдаа deploy хийгдэж,
+    нэг REST API серверт хандаж ажиллана.
+  </p>
+
+  <p>
+    <strong>Серверийн давхарга.</strong> «event-planning-api» нь Hono фреймворк дээр
+    бичигдсэн Node.js сервер бөгөөд бүх бизнес логик, үнийн тооцоолол, өгөгдлийн
+    баталгаажуулалтыг гүйцэтгэнэ. Middleware давхарга JWT токенийг шалгаж, хэрэглэгчийн
+    эрхийг (customer, provider, admin) тодорхойлно. Routes модулиуд HTTP хүсэлтийг
+    хүлээн авч, холбогдох функц руу чиглүүлнэ.
+  </p>
+
+  <p>
+    <strong>Өгөгдлийн давхарга.</strong> Supabase платформ PostgreSQL өгөгдлийн сан,
+    хэрэглэгчийн нэвтрэлт (Auth), зураг хадгалах Storage үйлчилгээг нэг дор өгнө.
+    Сервер service-role түлхүүр ашиглан өгөгдөлд хандаж, хандалтын хяналтыг
+    програмын түвшинд хэрэгжүүлнэ.
+  </p>
+
+</body>
+</html>
