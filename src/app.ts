@@ -22,6 +22,35 @@ const CORS_ALLOW_METHODS = 'GET, POST, PATCH, PUT, DELETE, OPTIONS';
 
 export const resolveAllowOrigin = (origin: string | undefined): string => origin ?? '*';
 
+/** Safe on Vercel where c.req.raw may be Node IncomingMessage in error handlers. */
+export const readRequestHeader = (c: Context, name: string): string | undefined => {
+	try {
+		const value = c.req.header(name);
+		if (value) return value;
+	} catch {
+		// fall through
+	}
+
+	const raw = c.req.raw as unknown;
+	if (raw instanceof Request) {
+		return raw.headers.get(name) ?? undefined;
+	}
+
+	const headers = (raw as { headers?: unknown })?.headers;
+	if (headers && typeof headers === 'object') {
+		if (typeof (headers as Headers).get === 'function') {
+			return (headers as Headers).get(name) ?? undefined;
+		}
+		const record = headers as Record<string, string | string[] | undefined>;
+		const key = name.toLowerCase();
+		const value = record[key] ?? record[name];
+		if (Array.isArray(value)) return value[0];
+		return value;
+	}
+
+	return undefined;
+};
+
 export const corsHeadersFor = (origin: string | undefined): Headers => {
 	const headers = new Headers();
 	const allowOrigin = resolveAllowOrigin(origin);
@@ -38,14 +67,18 @@ export const corsHeadersFor = (origin: string | undefined): Headers => {
 
 export const applyCorsToResponse = (c: Context, res: Response): Response => {
 	const merged = new Headers(res.headers);
-	for (const [key, value] of corsHeadersFor(c.req.header('origin'))) {
+	for (const [key, value] of corsHeadersFor(readRequestHeader(c, 'origin'))) {
 		merged.set(key, value);
 	}
 	return new Response(res.body, { status: res.status, statusText: res.statusText, headers: merged });
 };
 
 const corsMiddleware: MiddlewareHandler = async (c, next) => {
-	const origin = c.req.header('origin');
+	const origin = readRequestHeader(c, 'origin');
+
+	if (c.req.method === 'OPTIONS') {
+		return new Response(null, { status: 204, headers: corsHeadersFor(origin) });
+	}
 
 	if (c.req.method === 'OPTIONS') {
 		return new Response(null, { status: 204, headers: corsHeadersFor(origin) });
